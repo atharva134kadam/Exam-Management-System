@@ -42,6 +42,7 @@ onAuthStateChanged(auth, async (user) => {
   const data = facultyDoc.data();
   facultyDept = data.department;
   
+  // Header UI Updates
   document.querySelectorAll(".u-name").forEach(el => el.innerText = data.name);
   document.getElementById("u-dept-sub").innerText = facultyDept + " Faculty";
   document.getElementById("u-initials").innerText = data.name.split(' ').map(n => n[0]).join('').toUpperCase();
@@ -74,7 +75,7 @@ window.showSection = function(id) {
 
 window.switchBuilderType = function(type) {
     document.getElementById('onlineBuilderArea').style.display = type === 'online' ? 'grid' : 'none';
-    document.getElementById('offlineBuilderArea').style.display = type === 'offline' ? 'grid' : 'none';
+    document.getElementById('offlineBuilderArea').style.display = type === 'grid' ? 'grid' : 'none';
     document.querySelectorAll('.b-type-btn').forEach(btn => btn.classList.remove('active-b'));
     event.currentTarget.classList.add('active-b');
 };
@@ -122,7 +123,7 @@ window.activateRecordViewer = async function(uid, name) {
     const viewer = document.getElementById("recordViewerModal");
     const container = document.getElementById("recordsContainer");
     viewer.style.display = "flex";
-    container.innerHTML = "<p>Loading...</p>";
+    container.innerHTML = "<p>Loading Exam History...</p>";
 
     const respQuery = query(collection(db, "responses"), where("studentId", "==", uid));
     const grievQuery = query(collection(db, "grievances"), where("studentId", "==", uid));
@@ -130,7 +131,7 @@ window.activateRecordViewer = async function(uid, name) {
     const grievances = grievSnap.docs.map(d => d.data());
 
     document.getElementById("v-student-name").innerText = name;
-    container.innerHTML = respSnap.empty ? "<p class='empty-msg'>No records.</p>" : "";
+    container.innerHTML = respSnap.empty ? "<p class='empty-msg'>No records found.</p>" : "";
 
     for (const d of respSnap.docs) {
         const r = d.data();
@@ -144,7 +145,7 @@ window.activateRecordViewer = async function(uid, name) {
                 <div style="display:flex; justify-content:space-between; align-items:center">
                     <div>
                         <div style="font-weight:800; color:var(--primary)">${examData.title} ${proctorFlag}</div>
-                        <small style="color:#64748b">${r.submittedAt?.toDate().toLocaleDateString()}</small>
+                        <small style="color:#64748b">Submitted: ${r.submittedAt?.toDate().toLocaleDateString()}</small>
                     </div>
                     <div style="text-align:right">
                         <div class="score-text">${r.autoScore} / ${examData.totalMarks}</div>
@@ -154,9 +155,85 @@ window.activateRecordViewer = async function(uid, name) {
                 ${g ? `<div class="g-tag">Grievance: <span class="badge-warn">${g.status}</span></div>` : ''}
             </div>`;
     }
+    lucide.createIcons();
 };
 
 /* ================= 2. BUILDER (ONLINE & TIME TABLE) ================= */
+window.toggleQuestionType = function() {
+    const type = document.getElementById('qType').value;
+    document.getElementById('mcqOptionsContainer').style.display = type === 'mcq' ? 'block' : 'none';
+};
+
+window.addQuestion = function() {
+    const qText = document.getElementById('qText').value;
+    const qType = document.getElementById('qType').value;
+    const qMarks = Number(document.getElementById('qMaxMarks').value);
+    
+    if (!qText || !qMarks) return alert("Fill question text and marks");
+
+    let qObj = { id: Date.now(), text: qText, type: qType, marks: qMarks };
+
+    if (qType === 'mcq') {
+        const o1 = document.getElementById('opt1').value;
+        const o2 = document.getElementById('opt2').value;
+        const o3 = document.getElementById('opt3').value;
+        const o4 = document.getElementById('opt4').value;
+        const correct = document.getElementById('correctOpt').value;
+
+        if (!o1 || !o2 || !o3 || !o4 || correct === "") return alert("Please fill all MCQ options and select correct answer");
+        
+        qObj.options = [o1, o2, o3, o4];
+        qObj.correctAnswer = Number(correct);
+    }
+
+    examQuestions.push(qObj);
+    resetQuestionForm();
+    renderOnlinePreview();
+};
+
+function resetQuestionForm() {
+    document.getElementById('qText').value = "";
+    document.getElementById('opt1').value = "";
+    document.getElementById('opt2').value = "";
+    document.getElementById('opt3').value = "";
+    document.getElementById('opt4').value = "";
+    document.getElementById('correctOpt').value = "";
+}
+
+function renderOnlinePreview() {
+    const container = document.getElementById('livePreview');
+    container.innerHTML = "";
+    examQuestions.forEach((q, i) => {
+        let optionsHtml = q.type === 'mcq' ? 
+            `<div style="margin-left:20px; font-size:12px; color:#64748b">
+                ${q.options.map((opt, idx) => `<div style="${idx === q.correctAnswer ? 'color:var(--green); font-weight:bold' : ''}">• ${opt}</div>`).join('')}
+            </div>` : '';
+        
+        container.innerHTML += `
+            <div class="card preview-item" style="padding:15px; margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between">
+                    <b>Q${i+1}. ${q.text}</b>
+                    <small>${q.marks}M</small>
+                </div>
+                ${optionsHtml}
+            </div>`;
+    });
+    document.getElementById('runningTotal').innerText = examQuestions.reduce((s, q) => s + q.marks, 0);
+}
+
+window.publishOnlineExam = async function() {
+    const title = document.getElementById('eTitle').value;
+    const date = document.getElementById('eDate').value;
+    if(!title || !date || examQuestions.length === 0) return alert("Incomplete Data");
+    await addDoc(collection(db, "exams"), {
+        title, date, questions: examQuestions, type: 'mcq',
+        totalMarks: examQuestions.reduce((s, q) => s + q.marks, 0),
+        department: facultyDept, createdBy: facultyUID, createdAt: serverTimestamp()
+    });
+    alert("Test Published!");
+    location.reload();
+};
+
 window.addScheduleRow = function() {
     const subject = document.getElementById('offTitle').value;
     const date = document.getElementById('offDate').value;
@@ -172,13 +249,12 @@ window.addScheduleRow = function() {
 function renderOfflineTable() {
     const container = document.getElementById('offlineTableBody');
     if (offlineScheduleRows.length === 0) {
-        container.innerHTML = "<tr><td colspan='6' style='text-align:center; padding:20px; color:#94a3b8'>No subjects added to draft.</td></tr>";
+        container.innerHTML = "<tr><td colspan='6' style='text-align:center; padding:20px; color:#94a3b8'>No subjects in draft.</td></tr>";
         return;
     }
     container.innerHTML = offlineScheduleRows.map((r, i) => `
-        <tr>
-            <td>${i+1}</td><td><b>${r.subject}</b></td><td>${r.date}</td><td>${r.time}</td><td>${r.marks}M</td>
-            <td><button onclick="removeScheduleRow(${r.id})" style="color:var(--red); background:none; border:none; cursor:pointer"><i data-lucide="trash-2" size="14"></i></button></td>
+        <tr><td>${i+1}</td><td><b>${r.subject}</b></td><td>${r.date}</td><td>${r.time}</td><td>${r.marks}M</td>
+        <td><button onclick="removeScheduleRow(${r.id})" style="color:var(--red); background:none; border:none; cursor:pointer"><i data-lucide="trash-2" size="14"></i></button></td>
         </tr>`).join("");
     lucide.createIcons();
 }
@@ -190,25 +266,16 @@ window.removeScheduleRow = (id) => {
 
 window.publishFullTimeTable = async function() {
     const tableName = document.getElementById('offTableName').value;
-    if(!tableName || offlineScheduleRows.length === 0) return alert("Enter Table Name and add at least one entry.");
-
+    if(!tableName || offlineScheduleRows.length === 0) return alert("Enter Table Name and add entries.");
     try {
         for (const row of offlineScheduleRows) {
             await addDoc(collection(db, "exams"), {
-                title: row.subject,
-                date: row.date,
-                time: row.time,
-                totalMarks: Number(row.marks),
-                type: 'offline', // CRITICAL for Student Dashboard visibility
-                scheduleGroup: tableName,
-                department: facultyDept,
-                createdBy: facultyUID,
-                createdAt: serverTimestamp()
+                title: row.subject, date: row.date, time: row.time, totalMarks: Number(row.marks),
+                type: 'offline', scheduleGroup: tableName, department: facultyDept, createdBy: facultyUID, createdAt: serverTimestamp()
             });
         }
         alert("Full Time Table Published!");
         offlineScheduleRows = [];
-        document.getElementById('offTableName').value = "";
         renderOfflineTable();
         refreshDashboard();
     } catch(e) { alert("Error: " + e.message); }
@@ -218,17 +285,15 @@ window.publishFullTimeTable = async function() {
 async function loadCreatedExams() {
     const container = document.getElementById('examList');
     const snap = await getDocs(query(collection(db, "exams"), where("department", "==", facultyDept)));
-    container.innerHTML = snap.empty ? "<p class='empty-msg'>No departmental activity found.</p>" : "";
+    container.innerHTML = snap.empty ? "<p class='empty-msg'>No records.</p>" : "";
     snap.forEach(d => {
-        const e = d.data();
-        const badge = e.type === 'offline' ? 'badge-orange' : 'badge-blue';
+        const e = d.data(); const badge = e.type === 'offline' ? 'badge-orange' : 'badge-blue';
         container.innerHTML += `
             <div class="card list-item">
                 <div><span class="badge ${badge}">${e.type}</span><br><b>${e.title}</b><br><small>${e.date}</small></div>
                 <i data-lucide="chevron-right"></i>
             </div>`;
     });
-    lucide.createIcons();
 }
 
 async function loadDashboardStats() {
@@ -244,11 +309,7 @@ async function loadGrievances() {
     container.innerHTML = snap.empty ? "<p class='empty-msg'>No concerns.</p>" : "";
     snap.forEach(docSnap => {
         const g = docSnap.data();
-        container.innerHTML += `
-            <div class="card list-item">
-                <div><span class="badge ${g.status.toLowerCase()}">${g.status}</span><h4 style="margin:5px 0">${g.studentName}</h4><small>${g.reason}</small></div>
-                ${g.status === 'Open' ? `<button class="action-btn" onclick="resolveGrievance('${docSnap.id}')">Resolve</button>` : '✅'}
-            </div>`;
+        container.innerHTML += `<div class="card list-item"><div><span class="badge ${g.status.toLowerCase()}">${g.status}</span><h4 style="margin:5px 0">${g.studentName}</h4><small>${g.reason}</small></div>${g.status === 'Open' ? `<button class="action-btn" onclick="resolveGrievance('${docSnap.id}')">Resolve</button>` : '✅'}</div>`;
     });
 }
 
@@ -262,7 +323,7 @@ window.closeRecords = () => document.getElementById("recordViewerModal").style.d
 </script>
 
 <style>
-:root { --primary: #0f172a; --accent: #2563eb; --bg: #f3f4f6; --red: #ef4444; --orange: #f59e0b; }
+:root { --primary: #0f172a; --accent: #2563eb; --bg: #f3f4f6; --red: #ef4444; --green: #10b981; --orange: #f59e0b; }
 body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: #1e293b; overflow-x: hidden; }
 
 /* Dashboard UI */
@@ -270,7 +331,7 @@ body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color
 .welcome-card { background: var(--primary); color: white; padding: 40px 5% 80px 5%; display: flex; justify-content: space-between; align-items: center; }
 .stats-box { display: flex; gap: 20px; background: rgba(255,255,255,0.1); padding: 15px 25px; border-radius: 15px; }
 
-/* Navigation Pill Tabs */
+/* Tabs */
 .tabs-container { max-width: 1100px; margin: -40px auto 30px auto; background: white; border-radius: 50px; display: flex; padding: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); overflow-x: auto; }
 .tab-item { flex: 1; padding: 12px; border-radius: 40px; border: none; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; color: #64748b; transition: 0.3s; min-width: 120px; }
 .active-tab { background: var(--primary); color: white; }
@@ -281,30 +342,30 @@ body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color
 .card { background: white; border-radius: 20px; padding: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid #f1f5f9; }
 .profile-accent { border-top: 4px solid var(--accent); animation: fadeIn 0.3s ease; }
 
-/* Time Table Table */
+/* Table and Builder */
 .schedule-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
 .schedule-table th { text-align: left; padding: 12px; background: #f8fafc; color: #64748b; font-size: 11px; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
 .schedule-table td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
-
-/* Builder Toggle Sub-Nav */
 .builder-nav { display: flex; gap: 10px; margin-bottom: 20px; background: #e2e8f0; padding: 5px; border-radius: 12px; width: fit-content; }
 .b-type-btn { padding: 8px 20px; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; color: #64748b; background: none; }
 .active-b { background: white; color: var(--primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 
-/* Status Badges */
+/* MCQ Config UI */
+.mcq-config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; background: #f1f5f9; padding: 15px; border-radius: 12px; }
+
+/* Badges */
 .badge { padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
 .badge-blue { background: #dbeafe; color: var(--accent); }
 .badge-orange { background: #ffedd5; color: var(--orange); }
-.badge-red { background: #fee2e2; color: var(--red); font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 5px; font-weight: bold; }
+.badge-red { background: #fee2e2; color: var(--red); font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 5px; font-weight: bold;}
 .badge-warn { background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 4px; font-size: 10px; }
-.open { background: #fef3c7; color: #b45309; }
 
-/* Modal Styles */
+/* Modal */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
-.modal-card { width: 100%; max-width: 700px; background: white; border-radius: 24px; overflow: hidden; animation: slideUp 0.3s ease; }
+.modal-card { width: 100%; max-width: 750px; background: white; border-radius: 24px; overflow: hidden; animation: slideUp 0.3s ease; }
 .record-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; margin-bottom: 12px; }
 
-/* Form Helpers */
+/* Form Elements */
 .avatar-sm { width: 35px; height: 35px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; }
 .list-item { display: flex; justify-content: space-between; align-items: center; padding: 18px 25px; transition: 0.2s; }
 .clickable:hover { border-color: var(--accent); background: #f0f7ff; cursor: pointer; }
@@ -346,7 +407,7 @@ input, select, textarea { width: 100%; padding: 12px; margin-top: 10px; border-r
 </div>
 
 <div class="main-content">
-  <div id="students" class="section-content active">
+  <div id="students" class="section-content">
     <div style="display:grid; grid-template-columns: 1.2fr 1fr; gap:30px;">
         <div>
             <h3>Directory</h3>
@@ -360,7 +421,7 @@ input, select, textarea { width: 100%; padding: 12px; margin-top: 10px; border-r
 
   <div id="exams" class="section-content">
     <div class="builder-nav">
-        <button class="b-type-btn active-b" onclick="switchBuilderType('online')">Online Proctored</button>
+        <button class="b-type-btn active-b" onclick="switchBuilderType('online')">Online Test</button>
         <button class="b-type-btn" onclick="switchBuilderType('offline')">Time Table Generator</button>
     </div>
 
@@ -368,14 +429,35 @@ input, select, textarea { width: 100%; padding: 12px; margin-top: 10px; border-r
         <div class="card">
             <h4>Configure Online Test</h4>
             <input id="eTitle" placeholder="Exam Title"><input id="eDate" type="date">
-            <h5 style="margin-top:20px">Questions</h5>
+            <h5 style="margin-top:15px">Add Question</h5>
             <textarea id="qText" placeholder="Enter Question"></textarea>
-            <select id="qType"><option value="mcq">MCQ</option><option value="subjective">Subjective</option></select>
-            <input id="qMaxMarks" type="number" value="5">
-            <button class="action-btn" style="width:100%; margin-top:15px" onclick="addQuestion()">Add Question</button>
-            <button class="action-btn" style="width:100%; margin-top:20px; background:var(--primary)" onclick="publishOnlineExam()">🚀 Publish Test</button>
+            <div style="display:flex; gap:10px;">
+                <select id="qType" onchange="toggleQuestionType()">
+                    <option value="subjective">Subjective</option>
+                    <option value="mcq">MCQ (Auto-Graded)</option>
+                </select>
+                <input id="qMaxMarks" type="number" value="5" placeholder="Marks">
+            </div>
+
+            <div id="mcqOptionsContainer" style="display:none; margin-top:15px;">
+                <label style="font-size:12px; font-weight:bold; color:#64748b;">Set MCQ Options</label>
+                <div class="mcq-config-grid">
+                    <input id="opt1" placeholder="Option 1"> <input id="opt2" placeholder="Option 2">
+                    <input id="opt3" placeholder="Option 3"> <input id="opt4" placeholder="Option 4">
+                </div>
+                <select id="correctOpt" style="background:#dcfce7; border-color:#86efac;">
+                    <option value="">Select Correct Answer</option>
+                    <option value="0">Option 1</option>
+                    <option value="1">Option 2</option>
+                    <option value="2">Option 3</option>
+                    <option value="3">Option 4</option>
+                </select>
+            </div>
+
+            <button class="action-btn" style="width:100%; margin-top:15px" onclick="addQuestion()">Add to Paper</button>
+            <button class="action-btn" style="width:100%; margin-top:20px; background:var(--primary)" onclick="publishOnlineExam()">🚀 Publish Online Test</button>
         </div>
-        <div class="card" style="background:#f8fafc"><h3>Paper Preview</h3><div id="livePreview"></div></div>
+        <div class="card" style="background:#f8fafc"><h3>Paper Preview (Total: <span id="runningTotal">0</span>)</h3><div id="livePreview"></div></div>
     </div>
 
     <div id="offlineBuilderArea" style="display:none; grid-template-columns: 1fr 1.5fr; gap:25px;">
@@ -389,7 +471,7 @@ input, select, textarea { width: 100%; padding: 12px; margin-top: 10px; border-r
         </div>
         <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center">
-                <h3>Draft List</h3>
+                <h3 style="margin:0">Draft List</h3>
                 <input id="offTableName" placeholder="e.g. Semester 2nd" style="width:200px; margin-top:0">
             </div>
             <table class="schedule-table">
