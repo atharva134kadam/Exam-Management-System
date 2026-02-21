@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard · Unified view</title>
+    <!-- Font Awesome for crisp icons (purely design, no logic) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            background: #eef2f6;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ===== HEADER (refined) ===== */
+        .header {
+            background: #0f2b3c;
+            color: white;
+            padding: 0.8rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 6px 12px rgba(0,20,30,0.15);
+            z-index: 20;
+        }
+
+        .header h2 {
+            font-weight: 600;
+            font-size: 1.7rem;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header h2 i {
+            color: #47d7b0;
+            font-size: 2rem;
+        }
+
+        .logout-btn {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: white;
+            padding: 0.5rem 1.8rem;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(4px);
+        }
+
+        .logout-btn:hover {
+            background: #1abc9c;
+            border-color: #1abc9c;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 16px -8px #0a2b3a;
+        }
+
+        /* ===== LAYOUT: sidebar + content ===== */
+        .app-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* sidebar – darker, premium */
+        .sidebar {
+            width: 260px;
+            background: #132e40;
+            color: #e0edf5;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 0 1rem 0;
+            box-shadow: 4px 0 18px rgba(0, 20, 30, 0.2);
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            padding: 0 1.2rem 1.8rem 1.2rem;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #8aaec0;
+            font-weight: 600;
+        }
+
+        .sidebar-item {
+            padding: 0.9rem 1.5rem;
+            margin: 0.2rem 0.8rem;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-weight: 500;
+            color: #cfdee9;
+            transition: all 0.15s;
+            cursor: pointer;
+        }
+
+        .sidebar-item i {
+            width: 24px;
+            font-size: 1.3rem;
+            color: #5f9bb6;
+        }
+
+        .sidebar-item:hover {
+            background: #1e4f68;
+            color: white;
+        }
+
+        .sidebar-item:hover i {
+            color: #bef5e3;
+        }
+
+        /* main content area – scrollable */
+        .content {
+            flex: 1;
+            background: #f4f7fc;
+            padding: 2rem 2.5rem;
+            overflow-y: auto;
+        }
+
+        /* ===== CARDS ===== */
+        .card {
+            background: white;
+            border-radius: 28px;
+            padding: 1.8rem 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 18px 30px -12px rgba(0,40,60,0.2);
+            border: 1px solid rgba(255,255,255,0.7);
+            transition: all 0.2s;
+        }
+
+        .card h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #153e54;
+            margin-bottom: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card h3 i {
+            color: #1c7e9c;
+        }
+
+        /* tab style for merging create+view */
+        .section-tabs {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid rgba(28, 126, 156, 0.2);
+            padding-bottom: 0.2rem;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            padding: 0.7rem 2rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #4c6f85;
+            border-radius: 40px 40px 0 0;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab-btn i {
+            font-size: 1.2rem;
+        }
+
+        .tab-btn.active {
+            background: white;
+            color: #0f3b4f;
+            box-shadow: 0 -4px 8px rgba(0,40,60,0.04), 0 4px 0 white;
+        }
+
+        .tab-pane {
+            display: none;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        /* forms inside create pane */
+        .form-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .form-group {
+            flex: 1 1 calc(50% - 0.5rem);
+            min-width: 200px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #1d4e64;
+            margin-bottom: 0.2rem;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border: 1.5px solid #dde7ed;
+            border-radius: 20px;
+            font-size: 0.95rem;
+            background: #f9fcff;
+            transition: 0.2s;
+        }
+
+        .form-group input:focus {
+            border-color: #1f7b9c;
+            outline: none;
+            box-shadow: 0 0 0 4px rgba(31,123,156,0.1);
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 0.2rem 1rem;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-student { background: #d3f0fe; color: #0b4b6b; }
+        .badge-faculty { background: #e2f0da; color: #2d6e3b; }
+        .badge-parent { background: #fff0cf; color: #8f5e1b; }
+        .badge-admin { background: #fad7d7; color: #a12b2b; }
+
+        .search-box {
+            background: white;
+            border-radius: 40px;
+            padding: 0.2rem 0.2rem 0.2rem 1.8rem;
+            display: flex;
+            align-items: center;
+            border: 1px solid #cbdae4;
+            margin-bottom: 1.5rem;
+        }
+
+        .search-box i {
+            color: #97b2c5;
+            font-size: 1.2rem;
+        }
+
+        .search-box input {
+            border: none;
+            padding: 0.9rem 1rem;
+            width: 100%;
+            background: transparent;
+            font-size: 1rem;
+        }
+
+        .search-box input:focus {
+            outline: none;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 8px;
+        }
+
+        th {
+            text-align: left;
+            padding: 0.8rem 0.8rem;
+            color: #2d5f7a;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #cbdae4;
+        }
+
+        td {
+            background: white;
+            padding: 0.8rem 0.8rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.02);
+        }
+
+        .action-btn {
+            background: transparent;
+            border: none;
+            color: #2f86a3;
+            cursor: pointer;
+            font-size: 1rem;
+            margin: 0 4px;
+        }
+
+        .action-btn.delete {
+            color: #d14;
+        }
+
+        .inline-select {
+            background: #edf3f8;
+            border: none;
+            padding: 0.4rem 1rem;
+            border-radius: 30px;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .create-role-pills {
+            display: flex;
+            gap: 12px;
+            margin: 1.5rem 0 1rem;
+        }
+
+        .pill {
+            background: white;
+            border: 1px solid #c3ddee;
+            border-radius: 40px;
+            padding: 0.6rem 1.6rem;
+            font-weight: 600;
+            color: #1b526b;
+            cursor: pointer;
+            transition: 0.1s;
+        }
+
+        .pill.active {
+            background: #115e7c;
+            border-color: #115e7c;
+            color: white;
+            box-shadow: 0 6px 12px -6px #0a3342;
+        }
+
+        /* student picker for parent */
+        #studentSelect {
+            width: 100%;
+            padding: 0.5rem;
+            border-radius: 18px;
+            border: 1px solid #bfd7e5;
+        }
+
+        .back-btn {
+            background: #e5f0f6;
+            border: none;
+            border-radius: 30px;
+            padding: 0.5rem 1.5rem;
+            font-weight: 600;
+            color: #1d5772;
+            margin-top: 1rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h2><i class="fas fa-shield-alt"></i> UniManage</h2>
+    <button class="logout-btn" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button>
+</div>
+
+<div class="app-container">
+    <div class="sidebar">
+        <div class="sidebar-header">navigation</div>
+        <div class="sidebar-item" onclick="loadHome()">
+            <i class="fas fa-home"></i> Home
+        </div>
+        <div class="sidebar-item" id="createMenu" style="display:none;" onclick="loadMergedView()">
+            <i class="fas fa-users-cog"></i> Accounts Management
+        </div>
+        
+    </div>
+
+    <div class="content" id="mainContent">
+        <!-- dynamic content loads here -->
+    </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut, createUserWithEmailAndPassword }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import {
+    getFirestore,
+    doc,
+    setDoc,
+    getDoc,
+    collection,
+    getDocs,
+    deleteDoc
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
+  authDomain: "admin-management-db779.firebaseapp.com",
+  projectId: "admin-management-db779",
+  storageBucket: "admin-management-db779.firebasestorage.app",
+  messagingSenderId: "144412069580",
+  appId: "1:144412069580:web:52670196ee40c687ddbc69"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let currentRole = "";
+
+onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+        window.location.href = "login.html";
+        return;
+    }
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) {
+        alert("No role assigned. Contact Admin.");
+        signOut(auth);
+        return;
+    }
+    currentRole = snap.data().role;
+
+    if (currentRole === "admin") {
+        document.getElementById("createMenu").style.display = "block";
+        document.getElementById("viewUsersMenu").style.display = "block";
+    }
+    loadHome(); // default home
+});
+
+// ---------- HOME ----------
+window.loadHome = function() {
+    const content = document.getElementById("mainContent");
+    content.innerHTML = `
+        <div class="card">
+            <h3><i class="fas fa-rainbow"></i> Welcome, ${currentRole}</h3>
+            <p style="font-size:1.2rem; color:#2f607a;">Manage users, roles, and everything from the merged panel.</p>
+            <div style="margin-top:1.5rem; display:flex; gap:1rem;">
+                <div style="background:#e5f2fb; padding:1rem 2rem; border-radius:30px;"><i class="fas fa-user-graduate"></i> Students</div>
+                <div style="background:#e0f0e2; padding:1rem 2rem; border-radius:30px;"><i class="fas fa-chalkboard-teacher"></i> Faculty</div>
+            </div>
+        </div>
+    `;
+};
+
+// ---------- MERGED VIEW: create + view users in one tabbed card ----------
+window.loadMergedView = async function() {
+    const content = document.getElementById("mainContent");
+    // basic two-tab layout
+    content.innerHTML = `
+        <div class="card" style="padding:1.8rem 2rem;">
+            <div class="section-tabs">
+                <button class="tab-btn active" id="tabCreateBtn"><i class="fas fa-plus-circle"></i> Create account</button>
+                <button class="tab-btn" id="tabViewBtn"><i class="fas fa-table"></i> View all users</button>
+            </div>
+            <div id="tabCreatePane" class="tab-pane active">
+                <!-- dynamic create form (role selector) -->
+                <div class="create-role-pills">
+                    <span class="pill active" onclick="switchCreateRole('student')" id="pillStudent">Student</span>
+                    <span class="pill" onclick="switchCreateRole('faculty')" id="pillFaculty">Faculty</span>
+                    <span class="pill" onclick="switchCreateRole('parent')" id="pillParent">Parent</span>
+                </div>
+                <div id="createFormContainer">
+                    <!-- student form by default -->
+                </div>
+            </div>
+            <div id="tabViewPane" class="tab-pane">
+                <!-- search + user listings will be injected via loadUsers() -->
+                <div id="usersListContainer"></div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById("tabCreateBtn").addEventListener('click', () => {
+        document.getElementById("tabCreateBtn").classList.add('active');
+        document.getElementById("tabViewBtn").classList.remove('active');
+        document.getElementById("tabCreatePane").classList.add('active');
+        document.getElementById("tabViewPane").classList.remove('active');
+    });
+
+    document.getElementById("tabViewBtn").addEventListener('click', () => {
+        document.getElementById("tabViewBtn").classList.add('active');
+        document.getElementById("tabCreateBtn").classList.remove('active');
+        document.getElementById("tabViewPane").classList.add('active');
+        document.getElementById("tabCreatePane").classList.remove('active');
+        loadUsersIntoContainer(); // load table inside view pane
+    });
+
+    // initialise create form with student
+    switchCreateRole('student');
+};
+
+// switch create form (student/faculty/parent) inside merged pane
+window.switchCreateRole = function(role) {
+    // update pill active
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    document.getElementById(`pillStudent`).classList.remove('active');
+    document.getElementById(`pillFaculty`).classList.remove('active');
+    document.getElementById(`pillParent`).classList.remove('active');
+    if (role === 'student') document.getElementById('pillStudent').classList.add('active');
+    if (role === 'faculty') document.getElementById('pillFaculty').classList.add('active');
+    if (role === 'parent') document.getElementById('pillParent').classList.add('active');
+
+    const container = document.getElementById('createFormContainer');
+    if (role === 'student') {
+        container.innerHTML = `
+            <div class="form-grid">
+                <div class="form-group"><label>Full name</label><input id="name" placeholder="John Doe"></div>
+                <div class="form-group"><label>Email</label><input id="email" type="email" placeholder="student@uni.edu"></div>
+                <div class="form-group"><label>Password</label><input id="password" type="password" placeholder="••••••"></div>
+                <div class="form-group"><label>PRN</label><input id="prn" placeholder="PRN123"></div>
+                <div class="form-group"><label>Department</label><input id="department" placeholder="CSE"></div>
+                <div class="form-group"><label>Phone</label><input id="phone" placeholder="9876543210"></div>
+                <div class="form-group"><label>Batch</label><input id="batch" placeholder="2026"></div>
+            </div>
+            <button class="logout-btn" style="background:#115e7c; margin-top:1rem; width:auto;" onclick="createStudent()"><i class="fas fa-user-plus"></i> Create student</button>
+        `;
+    } else if (role === 'faculty') {
+        container.innerHTML = `
+            <div class="form-grid">
+                <div class="form-group"><label>Full name</label><input id="name" placeholder="Dr. Smith"></div>
+                <div class="form-group"><label>Email</label><input id="email" type="email" placeholder="faculty@uni.edu"></div>
+                <div class="form-group"><label>Password</label><input id="password" type="password" placeholder="••••••"></div>
+                <div class="form-group"><label>Department</label><input id="department" placeholder="Physics"></div>
+                <div class="form-group"><label>Phone</label><input id="phone" placeholder="9876543210"></div>
+            </div>
+            <button class="logout-btn" style="background:#115e7c; margin-top:1rem;" onclick="createFaculty()"><i class="fas fa-user-tie"></i> Create faculty</button>
+        `;
+    } else if (role === 'parent') {
+        container.innerHTML = `
+            <div class="form-grid">
+                <div class="form-group"><label>Full name</label><input id="name" placeholder="Parent name"></div>
+                <div class="form-group"><label>Email</label><input id="email" type="email" placeholder="parent@family.com"></div>
+                <div class="form-group"><label>Password</label><input id="password" type="password" placeholder="••••••"></div>
+                <div class="form-group"><label>Select student</label>
+                    <input type="text" id="studentSearch" placeholder="Search student..." onkeyup="filterStudents(this.value)">
+                    <select id="studentSelect" size="3" style="width:100%; margin-top:5px;" onchange="autoFillStudentDetails()"></select>
+                </div>
+                <div class="form-group"><label>Department</label><input id="department" placeholder="auto-filled" readonly></div>
+                <div class="form-group"><label>PRN</label><input id="prn" placeholder="auto-filled" readonly></div>
+            </div>
+            <button class="logout-btn" style="background:#115e7c; margin-top:1rem;" onclick="createParent()"><i class="fas fa-user-friends"></i> Create parent</button>
+        `;
+        loadStudentsForParent();
+    }
+};
+
+// load users table into view pane container (exact same logic, but injected)
+window.loadUsersIntoContainer = async function() {
+    const container = document.getElementById('usersListContainer');
+    if (!container) return;
+
+    const querySnapshot = await getDocs(collection(db, "users"));
+    let students = "", faculty = "", parents = "";
+    let studentCount = 0, facultyCount = 0, parentCount = 0;
+
+    querySnapshot.forEach((userDoc) => {
+        const data = userDoc.data();
+        const id = userDoc.id;
+        const row = `
+            <tr>
+                <td>
+                    <span style="color:#1abc9c; cursor:pointer; font-weight:600;" onclick="viewUserDetails('${id}')">
+                        <i class="fas fa-user-circle"></i> ${data.email}
+                    </span>
+                </td>
+                <td>
+                    <select class="inline-select" onchange="updateRole('${id}', this.value)">
+                        <option value="student" ${data.role==="student"?"selected":""}>Student</option>
+                        <option value="faculty" ${data.role==="faculty"?"selected":""}>Faculty</option>
+                        <option value="parent" ${data.role==="parent"?"selected":""}>Parent</option>
+                        <option value="admin" ${data.role==="admin"?"selected":""}>Admin</option>
+                    </select>
+                </td>
+                <td>
+                    <button class="action-btn" onclick="deleteUser('${id}')"><i class="fas fa-trash-alt"></i></button>
+                </td>
+            </tr>
+        `;
+
+        if (data.role === "student") { students += row; studentCount++; }
+        else if (data.role === "faculty") { faculty += row; facultyCount++; }
+        else if (data.role === "parent") { parents += row; parentCount++; }
+    });
+
+    container.innerHTML = `
+        <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" placeholder="Search by email..." onkeyup="searchUser(this.value)">
+        </div>
+        ${generateSection("Students", studentCount, students)}
+        ${generateSection("Faculty", facultyCount, faculty)}
+        ${generateSection("Parents", parentCount, parents)}
+    `;
+};
+
+function generateSection(title, count, rows) {
+    return `
+        <div style="margin-top:1.5rem;">
+            <h4 style="color:#194252;">${title} (${count})</h4>
+            <table width="100%">
+                <thead><tr><th>Email</th><th>Role</th><th>Action</th></tr></thead>
+                <tbody>${rows || `<tr><td colspan="3" style="text-align:center;">No ${title}</td></tr>`}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+// ----- keep all original functions unchanged (createStudent, createFaculty, etc) 
+// ----- but also need to keep references global.
+
+window.createStudent = async function() {
+    const name = document.getElementById("name")?.value || '';
+    const email = document.getElementById("email")?.value;
+    const password = document.getElementById("password")?.value;
+    const prn = document.getElementById("prn")?.value;
+    const department = document.getElementById("department")?.value;
+    const phone = document.getElementById("phone")?.value;
+    const batch = document.getElementById("batch")?.value;
+
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await setDoc(doc(db, "users", cred.user.uid), { role: "student", name, email, prn, department, phone, batch });
+    alert("Student Created!");
+    loadMergedView();  // refresh merged view
+};
+
+window.createFaculty = async function() {
+    const name = document.getElementById("name")?.value;
+    const email = document.getElementById("email")?.value;
+    const password = document.getElementById("password")?.value;
+    const department = document.getElementById("department")?.value;
+    const phone = document.getElementById("phone")?.value;
+
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await setDoc(doc(db, "users", cred.user.uid), { role: "faculty", name, email, department, phone });
+    alert("Faculty Created!");
+    loadMergedView();
+};
+
+window.createParent = async function() {
+    const name = document.getElementById("name")?.value;
+    const email = document.getElementById("email")?.value;
+    const password = document.getElementById("password")?.value;
+    const department = document.getElementById("department")?.value;
+    const prn = document.getElementById("prn")?.value;
+    const studentSelect = document.getElementById("studentSelect");
+    const studentId = studentSelect?.value;
+    const studentEmail = studentSelect?.options[studentSelect.selectedIndex]?.text;
+
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await setDoc(doc(db, "users", cred.user.uid), {
+        role: "parent", name, email, department, prn,
+        linkedStudentId: studentId, linkedStudentEmail: studentEmail
+    });
+    alert("Parent Created!");
+    loadMergedView();
+};
+
+window.loadStudentsForParent = async function() {
+    const select = document.getElementById("studentSelect");
+    if (!select) return;
+    select.innerHTML = "";
+    const querySnapshot = await getDocs(collection(db, "users"));
+    querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.role === "student") {
+            const option = document.createElement("option");
+            option.value = docSnap.id;
+            option.textContent = data.email;
+            option.dataset.prn = data.prn || "";
+            option.dataset.department = data.department || "";
+            select.appendChild(option);
+        }
+    });
+};
+
+window.filterStudents = function(keyword) {
+    const options = document.querySelectorAll("#studentSelect option");
+    options.forEach(o => {
+        o.style.display = o.textContent.toLowerCase().includes(keyword.toLowerCase()) ? "" : "none";
+    });
+};
+
+window.autoFillStudentDetails = function() {
+    const select = document.getElementById("studentSelect");
+    const selected = select?.options[select.selectedIndex];
+    if (selected) {
+        const deptInput = document.getElementById("department");
+        const prnInput = document.getElementById("prn");
+        if (deptInput) deptInput.value = selected.dataset.department || '';
+        if (prnInput) prnInput.value = selected.dataset.prn || '';
+    }
+};
+
+// role update, delete, search, view details (identical to original but keep)
+window.updateRole = async function(uid, newRole) {
+    await setDoc(doc(db, "users", uid), { role: newRole }, { merge: true });
+    alert("Role Updated!");
+    loadUsersIntoContainer(); // refresh table in view pane
+};
+
+window.deleteUser = async function(uid) {
+    if (!confirm("Delete user?")) return;
+    await deleteDoc(doc(db, "users", uid));
+    alert("User Deleted!");
+    loadUsersIntoContainer();
+};
+
+window.searchUser = function(keyword) {
+    const rows = document.querySelectorAll("#usersListContainer table tbody tr");
+    rows.forEach(row => {
+        const email = row.cells[0]?.innerText.toLowerCase() || "";
+        row.style.display = email.includes(keyword.toLowerCase()) ? "" : "none";
+    });
+};
+
+window.viewUserDetails = async function(uid) {
+    const snap = await getDoc(doc(db, "users", uid));
+    if (!snap.exists()) return;
+    const data = snap.data();
+    let html = `<div class="card"><h3>👤 Details</h3>`;
+    for (let [k,v] of Object.entries(data)) html += `<p><strong>${k}:</strong> ${v}</p>`;
+    html += `<button class="back-btn" onclick="loadMergedView()">← Back</button></div>`;
+    document.getElementById("mainContent").innerHTML = html;
+};
+
+window.logout = function() { signOut(auth).then(() => window.location.href = "login.html"); };
+
+// expose necessary globals
+window.loadMergedView = loadMergedView;
+window.switchCreateRole = switchCreateRole;
+
+</script>
+</body>
+</html>

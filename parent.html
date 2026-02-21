@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Parent Dashboard</title>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f9;
+    }
+
+    header {
+      background: #1e3c72;
+      color: white;
+      padding: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .container {
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    }
+
+    button {
+      padding: 8px 15px;
+      border: none;
+      background: #e74c3c;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .info {
+      margin: 8px 0;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h2>Parent Dashboard</h2>
+  <button onclick="logout()">Logout</button>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h3>Parent Details</h3>
+    <div class="info"><b>Name:</b> <span id="parentName"></span></div>
+    <div class="info"><b>Email:</b> <span id="parentEmail"></span></div>
+    <div class="info"><b>Department:</b> <span id="parentDept"></span></div>
+    <div class="info"><b>PRN:</b> <span id="parentPRN"></span></div>
+  </div>
+
+  <div class="card">
+    <h3>Linked Student Details</h3>
+    <div class="info"><b>Name:</b> <span id="studentName"></span></div>
+    <div class="info"><b>Email:</b> <span id="studentEmail"></span></div>
+    <div class="info"><b>Batch:</b> <span id="studentBatch"></span></div>
+    <div class="info"><b>Department:</b> <span id="studentDept"></span></div>
+  </div>
+
+</div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut } 
+from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+import { getFirestore, doc, getDoc } 
+from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// 🔥 Your Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
+  authDomain: "admin-management-db779.firebaseapp.com",
+  projectId: "admin-management-db779",
+  storageBucket: "admin-management-db779.firebasestorage.app",
+  messagingSenderId: "144412069580",
+  appId: "1:144412069580:web:52670196ee40c687ddbc69",
+  measurementId: "G-HY31FECMSB"
+};
+
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// 🔐 Auth Check
+onAuthStateChanged(auth, async (user) => {
+
+  if (!user) {
+    window.location.href = "login.html";
+    return;
+  }
+
+  // Get logged in user from USERS collection
+  const userRef = doc(db, "users", user.uid);
+  const userSnap = await getDoc(userRef);
+
+  if (!userSnap.exists()) {
+    alert("User record not found!");
+    return;
+  }
+
+  const userData = userSnap.data();
+
+  // 🚫 Role Check
+  if (userData.role !== "parent") {
+    alert("Access Denied! Not a Parent.");
+    window.location.href = "login.html";
+    return;
+  }
+
+  // ✅ Show Parent Data
+  document.getElementById("parentName").innerText = userData.name;
+  document.getElementById("parentEmail").innerText = userData.email;
+  document.getElementById("parentDept").innerText = userData.department;
+  document.getElementById("parentPRN").innerText = userData.prn;
+
+  // 👨‍🎓 Fetch Linked Student
+  const studentRef = doc(db, "users", userData.linkedStudentId);
+  const studentSnap = await getDoc(studentRef);
+
+  if (studentSnap.exists()) {
+    const studentData = studentSnap.data();
+
+    document.getElementById("studentName").innerText = studentData.name;
+    document.getElementById("studentEmail").innerText = studentData.email;
+    document.getElementById("studentBatch").innerText = studentData.batch;
+    document.getElementById("studentDept").innerText = studentData.department;
+  } else {
+    document.getElementById("studentName").innerText = "Not Found";
+  }
+
+});
+
+// 🚪 Logout
+window.logout = function () {
+  signOut(auth).then(() => {
+    window.location.href = "login.html";
+  });
+};
+
+</script>
+
+</body>
+</html>

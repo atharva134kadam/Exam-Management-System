@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>EduSmart 360 | Student Portal</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, collection, getDocs, query, where, setDoc, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
+  authDomain: "admin-management-db779.firebaseapp.com",
+  projectId: "admin-management-db779",
+  storageBucket: "admin-management-db779.firebasestorage.app",
+  messagingSenderId: "144412069580",
+  appId: "1:144412069580:web:52670196ee40c687ddbc69",
+  measurementId: "G-HY31FECMSB"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let studentData = null;
+let cheatWarnings = 0;
+const MAX_WARNINGS = 3;
+
+/* ================= AUTH & INITIALIZATION ================= */
+onAuthStateChanged(auth, async (user) => {
+  if (!user) return window.location.href = "login.html";
+
+  const studentDoc = await getDoc(doc(db, "users", user.uid));
+  if (!studentDoc.exists() || studentDoc.data().role !== "student") {
+    alert("Access Denied");
+    window.location.href = "login.html";
+    return;
+  }
+
+  studentData = studentDoc.data();
+  updateUI();
+  loadDashboardData();
+  lucide.createIcons();
+});
+
+function updateUI() {
+  document.querySelectorAll(".u-name").forEach(el => el.innerText = studentData.name);
+  document.getElementById("u-dept").innerText = studentData.department + " • Batch " + studentData.batch;
+  document.getElementById("u-initials").innerText = studentData.name.split(' ').map(n => n[0]).join('').toUpperCase();
+  
+  document.getElementById("info-name-v").innerText = studentData.name;
+  document.getElementById("info-prn").innerText = studentData.prn;
+  document.getElementById("info-dept").innerText = studentData.department;
+  document.getElementById("info-batch").innerText = studentData.batch;
+  document.getElementById("info-email").innerText = studentData.email;
+  document.getElementById("info-phone").innerText = studentData.phone;
+}
+
+async function loadDashboardData() {
+    const respQuery = query(collection(db, "responses"), where("studentId", "==", auth.currentUser.uid));
+    const respSnap = await getDocs(respQuery);
+    const takenIds = respSnap.docs.map(d => d.data().examId);
+
+    loadExams(takenIds);
+    loadResults(respSnap);
+    loadGrievanceOptions(respSnap);
+    loadExistingGrievances();
+}
+
+/* ================= NAVIGATION ================= */
+window.showSection = function(id) {
+  document.querySelectorAll(".section-content").forEach(sec => sec.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  document.querySelectorAll(".tab-item").forEach(tab => tab.classList.remove("active-tab"));
+  event.currentTarget.classList.add("active-tab");
+  lucide.createIcons();
+};
+
+/* ================= EXAMS SECTION ================= */
+async function loadExams(takenIds) {
+  const onlineContainer = document.getElementById("onlineExams");
+  const offlineTableBody = document.getElementById("offlineTableBody");
+  const offlineCard = document.getElementById("offlineCard");
+  
+  const q = query(collection(db, "exams"), where("department", "==", studentData.department));
+  const examSnap = await getDocs(q);
+  
+  const availableExams = examSnap.docs.filter(doc => !takenIds.includes(doc.id));
+
+  onlineContainer.innerHTML = "";
+  offlineTableBody.innerHTML = "";
+  let hasOffline = false;
+
+  availableExams.forEach(docSnap => {
+    const exam = docSnap.data();
+    const isOnline = (exam.type === 'mcq' || exam.type === 'online');
+    
+    if (isOnline) {
+      onlineContainer.innerHTML += `
+        <div class="card list-item">
+          <div class="item-info">
+            <div class="icon-bg blue"><i data-lucide="monitor"></i></div>
+            <div><h4 style="margin:0">${exam.title}</h4><small>${exam.totalMarks} Marks • ${exam.date}</small></div>
+          </div>
+          <button class="action-btn" onclick="takeExam('${docSnap.id}')">Start Test</button>
+        </div>`;
+    } else {
+      hasOffline = true;
+      offlineTableBody.innerHTML += `
+        <tr>
+          <td><div class="icon-bg-sm orange"><i data-lucide="book-open"></i></div></td>
+          <td><b>${exam.title}</b></td>
+          <td>${exam.date}</td>
+          <td>${exam.time}</td>
+          <td><span class="badge-offline">${exam.totalMarks}M</span></td>
+        </tr>`;
+    }
+  });
+  offlineCard.style.display = hasOffline ? "block" : "none";
+}
+
+/* ================= RESULTS SECTION ================= */
+async function loadResults(respSnap) {
+    const container = document.getElementById("resultsContainer");
+    if (respSnap.empty) {
+        container.innerHTML = `<div class="empty-state"><p>No results yet.</p></div>`;
+        return;
+    }
+    container.innerHTML = "";
+    for (const d of respSnap.docs) {
+        const res = d.data();
+        const examDoc = await getDoc(doc(db, "exams", res.examId));
+        const examData = examDoc.exists() ? examDoc.data() : { title: "Exam Record", totalMarks: "--" };
+        const proctorFlag = (res.isForced || res.warnings >= 3) ? `<span class="badge-red">FLAGGED</span>` : '';
+
+        container.innerHTML += `
+            <div class="card list-item">
+                <div class="item-info">
+                    <div class="icon-bg ${res.isForced ? 'red-bg' : 'green-bg'}"><i data-lucide="${res.isForced ? 'shield-off' : 'check-circle'}"></i></div>
+                    <div><h4 style="margin:0">${examData.title} ${proctorFlag}</h4><small>Score: ${res.autoScore} / ${examData.totalMarks}</small></div>
+                </div>
+                <button class="btn-outline" onclick="showSection('grievance')">Grievance</button>
+            </div>`;
+    }
+    lucide.createIcons();
+}
+
+/* ================= GRIEVANCE LOGIC ================= */
+async function loadGrievanceOptions(respSnap) {
+    const select = document.getElementById("grievanceExamSelect");
+    select.innerHTML = '<option value="">Select Completed Exam</option>';
+    for (const d of respSnap.docs) {
+        const res = d.data();
+        const examDoc = await getDoc(doc(db, "exams", res.examId));
+        const title = examDoc.exists() ? examDoc.data().title : "Unknown Exam";
+        select.innerHTML += `<option value="${res.examId}">${title}</option>`;
+    }
+}
+
+window.submitGrievance = async function() {
+    const examId = document.getElementById("grievanceExamSelect").value;
+    const reason = document.getElementById("grievanceReason").value;
+    const details = document.getElementById("grievanceDetails").value;
+
+    if (!examId || !reason || !details) return alert("Please fill all fields.");
+
+    await addDoc(collection(db, "grievances"), {
+        studentId: auth.currentUser.uid,
+        studentName: studentData.name,
+        dept: studentData.department,
+        examId, reason, details, status: "Open", createdAt: serverTimestamp()
+    });
+
+    alert("Grievance raised successfully!");
+    document.getElementById("grievanceReason").value = "";
+    document.getElementById("grievanceDetails").value = "";
+    loadExistingGrievances();
+};
+
+async function loadExistingGrievances() {
+    const container = document.getElementById("grievanceHistory");
+    const q = query(collection(db, "grievances"), where("studentId", "==", auth.currentUser.uid));
+    const snap = await getDocs(q);
+    
+    container.innerHTML = snap.empty ? "<p style='color:#64748b; text-align:center; padding:20px;'>No history found.</p>" : "";
+    snap.forEach(d => {
+        const g = d.data();
+        const statusClass = g.status === 'Open' ? 'status-open' : 'status-closed';
+        container.innerHTML += `
+            <div class="g-history-card">
+                <div style="display:flex; justify-content:space-between; align-items:start">
+                    <div>
+                        <h4 style="margin:0">${g.reason}</h4>
+                        <small style="color:#64748b">${g.createdAt?.toDate().toLocaleDateString()}</small>
+                    </div>
+                    <span class="status-badge ${statusClass}">${g.status}</span>
+                </div>
+                <p class="g-details-box">${g.details}</p>
+            </div>`;
+    });
+}
+
+/* ================= EXAM PORTAL ================= */
+window.takeExam = async function(examId) {
+  const docSnap = await getDoc(doc(db, "exams", examId));
+  const exam = docSnap.data();
+  cheatWarnings = 0;
+  setupAntiCheat(examId);
+  const portal = document.getElementById("examPortal");
+  portal.classList.add("portal-active");
+  let html = `<div class="p-head"><h2>${exam.title}</h2><div id="w-count" class="w-pill">Warnings: 0/3</div></div><div class="p-body">`;
+  exam.questions.forEach((q, i) => {
+    html += `<div class="q-card"><p><b>Q${i+1}.</b> ${q.text} (${q.marks}M)</p>
+      ${q.type === 'mcq' ? q.options.map((opt, idx) => `<label class="opt"><input type="radio" name="q_${q.id}" value="${idx}"> ${opt}</label>`).join('') : `<textarea name="q_${q.id}" rows="4" placeholder="Answer here..."></textarea>`}
+    </div>`;
+  });
+  html += `<button class="submit-btn" onclick="submitResponses('${examId}')">Submit Exam</button></div>`;
+  portal.innerHTML = html;
+};
+
+function setupAntiCheat(examId) {
+    document.oncontextmenu = (e) => e.preventDefault();
+    document.onvisibilitychange = () => {
+        if (document.hidden) {
+            cheatWarnings++;
+            const counter = document.getElementById('w-count');
+            if(counter) counter.innerText = `Warnings: ${cheatWarnings}/3`;
+            if (cheatWarnings >= MAX_WARNINGS) submitResponses(examId, true);
+        }
+    };
+}
+
+window.submitResponses = async function(examId, forced = false) {
+    const examSnap = await getDoc(doc(db, "exams", examId));
+    const exam = examSnap.data();
+    let responses = {};
+    let autoScore = 0;
+    exam.questions.forEach(q => {
+        const input = q.type === 'mcq' ? document.querySelector(`input[name="q_${q.id}"]:checked`) : document.querySelector(`textarea[name="q_${q.id}"]`);
+        if (input) {
+            responses[q.id] = input.value;
+            if (q.type === 'mcq' && input.value == q.correctAnswer) autoScore += Number(q.marks);
+        }
+    });
+    await setDoc(doc(db, "responses", `${examId}_${auth.currentUser.uid}`), {
+        examId, studentId: auth.currentUser.uid, studentName: studentData.name,
+        responses, autoScore, isForced: forced, warnings: cheatWarnings, submittedAt: serverTimestamp()
+    });
+    alert("Exam Submitted.");
+    location.reload();
+};
+
+window.logoutUser = () => signOut(auth).then(() => window.location.href = "login.html");
+</script>
+
+<style>
+:root { --primary: #0f172a; --accent: #2563eb; --bg: #f3f4f6; --red: #ef4444; --green: #10b981; --orange: #f59e0b; }
+body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: #1e293b; }
+
+/* Global UI */
+.navbar { background: var(--primary); color: white; padding: 15px 5%; display: flex; justify-content: space-between; align-items: center; }
+.welcome-card { background: var(--primary); color: white; padding: 40px 5% 80px 5%; display: flex; justify-content: space-between; align-items: center; }
+.tabs-container { max-width: 1100px; margin: -40px auto 30px auto; background: white; border-radius: 50px; display: flex; padding: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); overflow-x: auto; }
+.tab-item { flex: 1; padding: 12px; border-radius: 40px; border: none; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; color: #64748b; font-size: 14px; min-width: 120px; }
+.active-tab { background: var(--primary); color: white; }
+
+.main-content { max-width: 1100px; margin: 0 auto 50px auto; padding: 0 20px; }
+.section-content { display: none; }
+.section-content.active { display: block; animation: slideUp 0.3s ease; }
+.card { background: white; border-radius: 20px; padding: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid #f1f5f9; }
+
+/* Table and Lists */
+.tt-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.tt-table th { text-align: left; padding: 15px; color: #64748b; font-size: 11px; text-transform: uppercase; border-bottom: 2px solid #f1f5f9; }
+.tt-table td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+.icon-bg { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; }
+.icon-bg-sm { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; }
+.blue { background: #dbeafe; color: var(--accent); }
+.orange { background: #fef3c7; color: var(--orange); }
+.green-bg { background: #d1fae5; color: var(--green); }
+.red-bg { background: #fee2e2; color: var(--red); }
+.badge-red { background: #fee2e2; color: var(--red); font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-left: 5px; }
+
+/* Grievance Styles */
+.g-form-box select, .g-form-box textarea { width: 100%; padding: 12px; margin-top: 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc; font-family: inherit; font-size: 14px; box-sizing: border-box; }
+.g-history-card { background: white; border: 1px solid #e2e8f0; border-radius: 15px; padding: 20px; margin-bottom: 15px; position: relative; }
+.g-details-box { margin: 15px 0 0 0; font-size: 13px; color: #475569; background: #f1f5f9; padding: 12px; border-radius: 8px; border-left: 3px solid #cbd5e1; }
+.status-badge { font-size: 10px; padding: 4px 10px; border-radius: 20px; font-weight: bold; text-transform: uppercase; }
+.status-open { background: #fef3c7; color: #b45309; }
+.status-closed { background: #d1fae5; color: #065f46; }
+
+/* Actions */
+.list-item { display: flex; justify-content: space-between; align-items: center; padding: 18px; border: 1px solid #f1f5f9; border-radius: 15px; margin-bottom: 15px; }
+.action-btn { background: var(--accent); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+.btn-outline { background: white; border: 1px solid var(--accent); color: var(--accent); padding: 8px 15px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+
+/* Portal */
+.exam-portal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 2000; display: none; overflow-y: auto; }
+.portal-active { display: block; }
+.p-head { background: var(--primary); color: white; padding: 20px 10%; display: flex; justify-content: space-between; position: sticky; top: 0; }
+
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <div style="font-weight: 800; font-size: 20px;">EduSmart <span style="color:var(--accent)">360</span></div>
+  <div style="display:flex; align-items:center; gap:15px;">
+    <div style="text-align:right"><div class="u-name" style="font-weight:bold; font-size:14px;">--</div><small id="u-dept" style="color:#94a3b8; font-size:11px;">--</small></div>
+    <div class="avatar-circle" id="u-initials" style="width:35px; height:35px; background:var(--accent); border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold;">--</div>
+    <button onclick="logoutUser()" style="background:#ef4444; color:white; border:none; padding:6px 12px; border-radius:6px; font-size:12px; cursor:pointer;">Logout</button>
+  </div>
+</nav>
+
+<header class="welcome-card">
+  <div><h1 style="margin:0; font-size:32px;">Welcome back, <span class="u-name">--</span>! 👋</h1><p style="color:#94a3b8; margin-top:10px;">Your complete academic transparency dashboard</p></div>
+  <div style="display:flex; gap:20px; background:rgba(255,255,255,0.1); padding:15px 25px; border-radius:15px;"><div style="text-align:center;"><h3>9.2</h3><small style="color:#94a3b8; font-size:10px;">CGPA</small></div><div style="text-align:center;"><h3>12</h3><small style="color:#94a3b8; font-size:10px;">RANK</small></div><div style="text-align:center;"><h3>0</h3><small style="color:#94a3b8; font-size:10px;">BACKLOGS</small></div></div>
+</header>
+
+<div class="tabs-container">
+  <button class="tab-item active-tab" onclick="showSection('profile')"><i data-lucide="user"></i> Profile</button>
+  <button class="tab-item" onclick="showSection('exams')"><i data-lucide="calendar"></i> Exams</button>
+  <button class="tab-item" onclick="showSection('results')"><i data-lucide="file-check"></i> Results</button>
+  <button class="tab-item" onclick="showSection('grievance')"><i data-lucide="message-square"></i> Grievance</button>
+</div>
+
+<div class="main-content">
+  <div id="profile" class="section-content active">
+    <div class="card"><h4 style="border-bottom: 1px solid #f1f5f9; padding-bottom:10px; margin-bottom:20px;">Profile Overview</h4>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:30px;">
+          <div class="info-group"><label>Full Name</label><p id="info-name-v">--</p></div>
+          <div class="info-group"><label>PRN</label><p id="info-prn">--</p></div>
+          <div class="info-group"><label>Department</label><p id="info-dept">--</p></div>
+          <div class="info-group"><label>Batch</label><p id="info-batch">--</p></div>
+          <div class="info-group"><label>Email</label><p id="info-email">--</p></div>
+          <div class="info-group"><label>Phone</label><p id="info-phone">--</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="exams" class="section-content">
+    <div class="card"><h3>Online Examinations</h3><div id="onlineExams"></div></div>
+    <div class="card" id="offlineCard"><h3>Time Table</h3>
+      <table class="tt-table"><thead><tr><th></th><th>Subject</th><th>Date</th><th>Time</th><th>Marks</th></tr></thead>
+      <tbody id="offlineTableBody"></tbody></table>
+    </div>
+  </div>
+
+  <div id="results" class="section-content"><div class="card"><h3>Exam Results</h3><div id="resultsContainer"></div></div></div>
+
+  <div id="grievance" class="section-content">
+    <div class="card g-form-box">
+      <h3 style="margin:0">Academic Grievance Hub</h3>
+      <p style="font-size:12px; color:#64748b">Raise concerns regarding your evaluations or technical incidents.</p>
+      <select id="grievanceExamSelect"></select>
+      <select id="grievanceReason">
+          <option value="">Select Primary Reason</option>
+          <option value="Marks Mismatch">Marks Mismatch</option>
+          <option value="Question/Rubric Error">Question/Rubric Error</option>
+          <option value="Technical Dispute">Technical Dispute (Proctoring Flag)</option>
+      </select>
+      <textarea id="grievanceDetails" rows="4" placeholder="Provide a detailed explanation of your concern..."></textarea>
+      <button class="action-btn" style="width:100%; margin-top:20px;" onclick="submitGrievance()">Submit Grievance Request</button>
+    </div>
+    <div class="card" style="background:transparent; box-shadow:none; padding:0;">
+        <h3 style="margin:0 0 15px 0">Submission History</h3>
+        <div id="grievanceHistory"></div>
+    </div>
+  </div>
+</div>
+
+<div id="examPortal" class="exam-portal"></div>
+<script>lucide.createIcons();</script>
+</body>
+</html>

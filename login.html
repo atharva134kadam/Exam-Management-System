@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIT Academy · secure login</title>
+    <!-- Font Awesome 6 for crisp icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #072d44 0%, #124c6b 100%);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end; /* card on the right */
+            padding: 2rem;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* sophisticated background with overlay and subtle moving particles */
+        body::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: 
+                radial-gradient(circle at 20% 30%, rgba(26, 188, 156, 0.15) 0%, transparent 30%),
+                radial-gradient(circle at 90% 70%, rgba(52, 152, 219, 0.12) 0%, transparent 35%),
+                url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" opacity="0.08"><path d="M60 100 L100 40 L140 100 L100 160 Z" fill="white"/><circle cx="100" cy="100" r="20" fill="none" stroke="white" stroke-width="4"/></svg>');
+            background-size: 200px 200px, 200px 200px, auto;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* LEFT HERO SECTION — refined, elegant */
+        .hero-section {
+            position: absolute;
+            left: 8%;
+            max-width: 600px;
+            color: white;
+            z-index: 5;
+            text-shadow: 0 10px 20px rgba(0, 15, 25, 0.5);
+            animation: fadeInLeft 1s ease-out;
+        }
+
+        .hero-section h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            background: linear-gradient(to right, #ffffff, #e0f2fe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.8rem;
+        }
+
+        .hero-section .college-badge {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .hero-section .college-badge span {
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(6px);
+            padding: 0.4rem 1.6rem;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 1rem;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .hero-section p {
+            font-size: 1.3rem;
+            color: rgba(255,255,255,0.85);
+            margin-bottom: 2.5rem;
+            font-weight: 400;
+            max-width: 500px;
+            backdrop-filter: blur(2px);
+        }
+
+        .hero-features {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .hero-features div {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 0.5rem 1.4rem;
+            border-radius: 50px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.1);
+            font-weight: 500;
+        }
+
+        .hero-features i {
+            color: #1abc9c;
+            font-size: 1.3rem;
+        }
+
+        /* LOGIN CARD — glassmorphism premium */
+        .login-card {
+            width: 440px;
+            background: rgba(20, 45, 65, 0.5);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 2.5rem;
+            padding: 2.8rem 2.5rem;
+            box-shadow: 0 35px 70px rgba(0, 15, 30, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+            z-index: 10;
+            color: white;
+            margin-right: 5%;
+            animation: fadeInRight 1s ease-out;
+        }
+
+        /* Logo container — refined */
+        .logo-container {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo-wrapper {
+            display: inline-block;
+            background: rgba(255,255,255,0.95);
+            padding: 0.8rem 2rem 0.8rem 2rem;
+            border-radius: 80px;
+            box-shadow: 0 20px 30px -12px #0a1e2c;
+            border: 2px solid rgba(255,255,255,0.7);
+            transition: transform 0.2s;
+        }
+
+        .logo-wrapper:hover {
+            transform: scale(1.02);
+        }
+
+        .logo-wrapper img {
+            height: 70px;
+            width: auto;
+            display: block;
+        }
+
+        .login-card h2 {
+            text-align: center;
+            font-weight: 600;
+            font-size: 2rem;
+            letter-spacing: -0.5px;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(145deg, #ffffff, #caf0f8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subhead {
+            text-align: center;
+            color: rgba(255,255,255,0.7);
+            font-size: 0.95rem;
+            margin-bottom: 2.2rem;
+            border-bottom: 1px dashed rgba(255,255,255,0.2);
+            padding-bottom: 1rem;
+        }
+
+        /* input fields — modern floating style */
+        .input-field {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+
+        .input-field i {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255,255,255,0.7);
+            font-size: 1.2rem;
+            transition: 0.2s;
+            z-index: 2;
+        }
+
+        .input-field input {
+            width: 100%;
+            padding: 1rem 1rem 1rem 3.2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1.5px solid rgba(255,255,255,0.25);
+            border-radius: 50px;
+            font-size: 1rem;
+            color: white;
+            outline: none;
+            transition: 0.25s;
+            backdrop-filter: blur(4px);
+            font-weight: 400;
+            letter-spacing: 0.3px;
+        }
+
+        .input-field input:focus {
+            border-color: #1abc9c;
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 0 20px -8px #1abc9c;
+        }
+
+        .input-field input:focus + i {
+            color: #1abc9c;
+        }
+
+        .input-field input::placeholder {
+            color: rgba(255,255,255,0.5);
+            font-weight: 300;
+        }
+
+        /* login button */
+        .login-btn {
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(105deg, #1abc9c, #16a085);
+            border: none;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.8rem;
+            cursor: pointer;
+            box-shadow: 0 18px 30px -12px #0f3f44;
+            transition: all 0.25s;
+            border: 1px solid rgba(255,255,255,0.2);
+            margin-top: 0.5rem;
+        }
+
+        .login-btn i {
+            font-size: 1rem;
+            transition: transform 0.2s;
+        }
+
+        .login-btn:hover {
+            background: linear-gradient(105deg, #16a085, #1abc9c);
+            transform: translateY(-3px);
+            box-shadow: 0 26px 35px -12px #0f3f44;
+        }
+
+        .login-btn:hover i {
+            transform: translateX(5px);
+        }
+
+        /* error message elegant */
+        .error-message {
+            background: rgba(225, 85, 85, 0.2);
+            backdrop-filter: blur(6px);
+            border-left: 6px solid #ff6b6b;
+            border-radius: 60px;
+            padding: 0.9rem 1.5rem;
+            margin-top: 1.8rem;
+            color: #ffe3e3;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            font-size: 0.9rem;
+            border: 1px solid rgba(255,110,110,0.3);
+        }
+
+        .error-message i {
+            font-size: 1.3rem;
+            color: #ff8a8a;
+        }
+
+        /* footer help link */
+        .help-link {
+            text-align: center;
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.5);
+        }
+
+        .help-link a {
+            color: #b3e9db;
+            text-decoration: none;
+            font-weight: 600;
+            border-bottom: 1px dotted;
+        }
+
+        /* animations */
+        @keyframes fadeInLeft {
+            0% { opacity: 0; transform: translateX(-40px); }
+            100% { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes fadeInRight {
+            0% { opacity: 0; transform: translateX(40px); }
+            100% { opacity: 1; transform: translateX(0); }
+        }
+
+        /* responsiveness */
+        @media (max-width: 1000px) {
+            body { justify-content: center; }
+            .hero-section { display: none; }
+            .login-card { margin-right: 0; width: 90%; max-width: 440px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Left side content (richer) -->
+<div class="hero-section">
+    <div class="college-badge">
+        <span><i class="fas fa-university" style="margin-right: 6px;"></i> Est. 1999</span>
+        <span><i class="fas fa-star"></i> A Grade</span>
+    </div>
+    <h1>MIT Academy<br>of Engineering, Alandi</h1>
+    <p><i class="fas fa-quote-left" style="opacity:0.7; font-size:1rem;"></i> 
+        Transparent digital system for exams, evaluation, and student grievances.
+    </p>
+    <div class="hero-features">
+        <div><i class="fas fa-graduation-cap"></i> 6k+ students</div>
+        <div><i class="fas fa-chalkboard-teacher"></i> 450+ faculty</div>
+    </div>
+</div>
+
+<!-- LOGIN CARD with improved logo area -->
+<div class="login-card">
+    <div class="logo-container">
+        <div class="logo-wrapper">
+            <!-- 🔁 REPLACE WITH YOUR ACTUAL LOGO — preserves exact space -->
+            <img src="https://i.postimg.cc/JzSRThSK/Gemini-Generated-Image-g65nobg65nobg65n.png" 
+                 alt="MIT Academy logo"
+                 onerror="this.src='https://via.placeholder.com/160x70?text=MIT+Logo'">
+        </div>
+    </div>
+    <h2>Welcome back</h2>
+    <div class="subhead">Secure login</div>
+
+    <!-- Email input with icon -->
+    <div class="input-field">
+        <i class="far fa-envelope"></i>
+        <input type="email" id="email" placeholder="Official email" autocomplete="off">
+    </div>
+
+    <!-- Password input with icon -->
+    <div class="input-field">
+        <i class="fas fa-lock"></i>
+        <input type="password" id="password" placeholder="Password">
+    </div>
+
+    <!-- Login button (exactly same onclick) -->
+    <button class="login-btn" onclick="login()">
+        <span>Access dashboard</span>
+        <i class="fas fa-arrow-right"></i>
+    </button>
+
+    <!-- error container: we keep ID "error" but wrap in nice style. -->
+    <div id="error" class="error-message" style="display: none;">
+        <i class="fas fa-exclamation-circle"></i>
+        <span id="error-text"></span>
+    </div>
+
+    <div class="help-link">
+        <a href="#"><i class="far fa-question-circle"></i> Need help?</a> &nbsp;|&nbsp; 
+        <span style="color:rgba(255,255,255,0.3);">🔒 SSL secured</span>
+    </div>
+</div>
+
+<!-- ============ CORRECTED FIREBASE LOGIC ============ -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } 
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getFirestore, doc, getDoc } 
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
+        authDomain: "admin-management-db779.firebaseapp.com",
+        projectId: "admin-management-db779",
+        storageBucket: "admin-management-db779.firebasestorage.app",
+        messagingSenderId: "144412069580",
+        appId: "1:144412069580:web:52670196ee40c687ddbc69"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    window.login = async function() {
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+        const errorDiv = document.getElementById("error");
+        const errorTextSpan = document.getElementById("error-text");
+
+        // Hide error initially
+        errorDiv.style.display = 'none';
+
+        try {
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+
+            // 🔥 Fetch role from Firestore
+            const snap = await getDoc(doc(db, "users", user.uid));
+
+            if (!snap.exists()) {
+                errorTextSpan.innerText = "Role not assigned! Contact administrator.";
+                errorDiv.style.display = 'flex';
+                return;
+            }
+
+            const role = snap.data().role;
+
+            // 🔥 Redirect Based on Role
+            if (role === "admin") {
+                window.location.href = "admin.html";
+            } else if (role === "student") {
+                window.location.href = "student.html";
+            } else if (role === "faculty") {
+                window.location.href = "faculty.html";
+            } else if (role === "parent") {
+                window.location.href = "parent.html";
+            } else {
+                errorTextSpan.innerText = "Invalid role assigned.";
+                errorDiv.style.display = 'flex';
+            }
+
+        } catch (error) {
+            // Display Firebase error message in styled container
+            errorTextSpan.innerText = error.message;
+            errorDiv.style.display = 'flex';
+        }
+    };
+
+    // ensure error is hidden on load
+    window.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('error').style.display = 'none';
+    });
+</script>
+
+</body>
+</html>
