@@ -1,87 +1,259 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Parent Dashboard</title>
+  <title>EduSmart 360 | Parent Dashboard</title>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/lucide@latest"></script>
+
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #f4f6f9;
+    :root {
+      --primary: #0f172a;
+      --accent: #2563eb;
+      --bg: #f8fafc;
+      --white: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --green: #10b981;
+      --orange: #f59e0b;
+      --red: #ef4444;
     }
 
-    header {
-      background: #1e3c72;
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* Navbar & Header */
+    .navbar {
+      background: var(--primary);
       color: white;
-      padding: 15px;
+      padding: 12px 5%;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
 
-    .container {
-      padding: 20px;
+    .welcome-card {
+      background: var(--primary);
+      color: white;
+      padding: 40px 5% 70px 5%;
+    }
+
+    /* Tab System */
+    .tabs-container {
+      max-width: 1100px;
+      margin: -40px auto 30px;
+      background: white;
+      border-radius: 100px;
+      display: flex;
+      padding: 6px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+      overflow-x: auto;
+      border: 1px solid var(--border);
+    }
+
+    .tab-item {
+      flex: 1;
+      padding: 14px 20px;
+      border-radius: 100px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--muted);
+      transition: 0.3s;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .active-tab {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+    }
+
+    /* Content Layout */
+    .main-content {
+      max-width: 1100px;
+      margin: 0 auto 50px;
+      padding: 0 15px;
+    }
+
+    .section-content {
+      display: none;
+      animation: slideUp 0.4s ease;
+    }
+
+    .section-content.active {
+      display: block;
     }
 
     .card {
       background: white;
-      padding: 20px;
-      border-radius: 10px;
+      border-radius: 24px;
+      padding: 25px;
       margin-bottom: 20px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
 
-    button {
-      padding: 8px 15px;
-      border: none;
-      background: #e74c3c;
-      color: white;
+    /* Data Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    th {
+      text-align: left;
+      padding: 12px;
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 15px 12px;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 14px;
+    }
+
+    /* UI Components */
+    .badge {
+      font-size: 10px;
+      padding: 4px 10px;
       border-radius: 6px;
-      cursor: pointer;
+      font-weight: 800;
+      text-transform: uppercase;
     }
 
-    .info {
-      margin: 8px 0;
+    .status-approved { background: #d1fae5; color: #065f46; }
+    .status-pending { background: #fff7ed; color: #9a3412; }
+    .status-resolved { background: #eff6ff; color: #1e40af; }
+
+    .bench-tag {
+      background: #eff6ff;
+      color: var(--accent);
+      padding: 6px 12px;
+      border-radius: 10px;
+      font-weight: 700;
+      border-left: 4px solid var(--accent);
     }
+
+    .btn-logout {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    .info-label { font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 800; margin-bottom: 4px; display: block; }
+    .info-value { font-weight: 700; color: var(--primary); font-size: 15px; margin: 0; }
+
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
 <body>
 
-<header>
-  <h2>Parent Dashboard</h2>
-  <button onclick="logout()">Logout</button>
+<nav class="navbar">
+  <div style="font-size: 20px; font-weight: 900;">EduSmart <span style="color:var(--accent)">360</span></div>
+  <button class="btn-logout" onclick="logout()">Logout</button>
+</nav>
+
+<header class="welcome-card">
+  <h1 style="margin:0; font-size: 32px;">Parent Intelligence Dashboard</h1>
+  <p id="deptInfo" style="color:rgba(255,255,255,0.6); margin-top:10px;">--</p>
 </header>
 
-<div class="container">
+<div class="tabs-container">
+  <button class="tab-item active-tab" onclick="showSection('overview', this)"><i data-lucide="user"></i> Overview</button>
+  <button class="tab-item" onclick="showSection('academics', this)"><i data-lucide="award"></i> Academics</button>
+  <button class="tab-item" onclick="showSection('seating', this)"><i data-lucide="map-pin"></i> Exam Seating</button>
+  <button class="tab-item" onclick="showSection('grievances', this)"><i data-lucide="alert-circle"></i> Grievances</button>
+  <button class="tab-item" onclick="showSection('reeval', this)"><i data-lucide="file-text"></i> Re-evaluation</button>
+</div>
 
-  <div class="card">
-    <h3>Parent Details</h3>
-    <div class="info"><b>Name:</b> <span id="parentName"></span></div>
-    <div class="info"><b>Email:</b> <span id="parentEmail"></span></div>
-    <div class="info"><b>Department:</b> <span id="parentDept"></span></div>
-    <div class="info"><b>PRN:</b> <span id="parentPRN"></span></div>
+<div class="main-content">
+
+  <div id="overview" class="section-content active">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div class="card">
+            <h3 style="margin-top:0;"><i data-lucide="shield-check" style="vertical-align:middle; margin-right:8px"></i>Guardian Identity</h3>
+            <div style="margin-top:20px;">
+                <span class="info-label">Parent Name</span><p class="info-value" id="parentName">--</p>
+                <div style="margin-top:15px;"></div>
+                <span class="info-label">Verified Email</span><p class="info-value" id="parentEmail">--</p>
+            </div>
+        </div>
+        <div class="card" style="border-top: 5px solid var(--accent)">
+            <h3 style="margin-top:0;"><i data-lucide="graduation-cap" style="vertical-align:middle; margin-right:8px"></i>Ward Profile</h3>
+            <div style="margin-top:20px;">
+                <span class="info-label">Full Name</span><p class="info-value" id="studentName">--</p>
+                <div style="margin-top:15px;"></div>
+                <span class="info-label">PRN Number</span><p class="info-value" id="studentPRN">--</p>
+                <div style="margin-top:15px;"></div>
+                <span class="info-label">Batch & Dept</span><p class="info-value" id="studentBatchDept">--</p>
+            </div>
+        </div>
+    </div>
   </div>
 
-  <div class="card">
-    <h3>Linked Student Details</h3>
-    <div class="info"><b>Name:</b> <span id="studentName"></span></div>
-    <div class="info"><b>Email:</b> <span id="studentEmail"></span></div>
-    <div class="info"><b>Batch:</b> <span id="studentBatch"></span></div>
-    <div class="info"><b>Department:</b> <span id="studentDept"></span></div>
+  <div id="academics" class="section-content">
+    <div class="card">
+      <h3>Official Performance Records</h3>
+      <p class="text-muted">Verified examination results published by department heads.</p>
+      <div id="performanceList"></div>
+    </div>
+  </div>
+
+  <div id="seating" class="section-content">
+    <div class="card">
+      <h3>Live Seating Assignments</h3>
+      <p class="text-muted">Classroom and bench allocation for upcoming departmental exams.</p>
+      <div id="seatingList"></div>
+    </div>
+  </div>
+
+  <div id="grievances" class="section-content">
+    <div class="card">
+      <h3>Dispute Tracking</h3>
+      <p class="text-muted">Monitor academic grievances raised by your ward regarding exams.</p>
+      <div id="grievanceList"></div>
+    </div>
+  </div>
+
+  <div id="reeval" class="section-content">
+    <div class="card">
+      <h3>Re-evaluation Audit</h3>
+      <p class="text-muted">Official requests for paper re-checking and status updates.</p>
+      <div id="reevalList"></div>
+    </div>
   </div>
 
 </div>
 
 <script type="module">
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signOut } 
-from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-import { getFirestore, doc, getDoc } 
-from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
-// 🔥 Your Firebase config
 const firebaseConfig = {
   apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
   authDomain: "admin-management-db779.firebaseapp.com",
@@ -92,67 +264,147 @@ const firebaseConfig = {
   measurementId: "G-HY31FECMSB"
 };
 
-
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// 🔐 Auth Check
+let linkedStudentId = null;
+
 onAuthStateChanged(auth, async (user) => {
+  if (!user) return window.location.href = "index.html";
 
-  if (!user) {
-    window.location.href = "index.html";
-    return;
+  const parentSnap = await getDoc(doc(db, "users", user.uid));
+  const parent = parentSnap.data();
+
+  if (parent.role !== "parent") {
+      alert("Access Restricted to Parents.");
+      return window.location.href = "index.html";
   }
 
-  // Get logged in user from USERS collection
-  const userRef = doc(db, "users", user.uid);
-  const userSnap = await getDoc(userRef);
+  linkedStudentId = parent.linkedStudentId;
 
-  if (!userSnap.exists()) {
-    alert("User record not found!");
-    return;
-  }
+  document.getElementById("parentName").innerText = parent.name;
+  document.getElementById("parentEmail").innerText = parent.email;
 
-  const userData = userSnap.data();
+  const studentSnap = await getDoc(doc(db, "users", linkedStudentId));
+  const student = studentSnap.data();
 
-  // 🚫 Role Check
-  if (userData.role !== "parent") {
-    alert("Access Denied! Not a Parent.");
-    window.location.href = "index.html";
-    return;
-  }
+  document.getElementById("studentName").innerText = student.name;
+  document.getElementById("studentPRN").innerText = student.prn;
+  document.getElementById("studentBatchDept").innerText = `Batch ${student.batch} • ${student.department}`;
+  document.getElementById("deptInfo").innerText = student.department + " Department Portal • Verified Access";
 
-  // ✅ Show Parent Data
-  document.getElementById("parentName").innerText = userData.name;
-  document.getElementById("parentEmail").innerText = userData.email;
-  document.getElementById("parentDept").innerText = userData.department;
-  document.getElementById("parentPRN").innerText = userData.prn;
-
-  // 👨‍🎓 Fetch Linked Student
-  const studentRef = doc(db, "users", userData.linkedStudentId);
-  const studentSnap = await getDoc(studentRef);
-
-  if (studentSnap.exists()) {
-    const studentData = studentSnap.data();
-
-    document.getElementById("studentName").innerText = studentData.name;
-    document.getElementById("studentEmail").innerText = studentData.email;
-    document.getElementById("studentBatch").innerText = studentData.batch;
-    document.getElementById("studentDept").innerText = studentData.department;
-  } else {
-    document.getElementById("studentName").innerText = "Not Found";
-  }
-
+  // Trigger Data Fetching
+  loadPerformance();
+  loadSeating();
+  loadGrievances();
+  loadReevaluation();
+  lucide.createIcons();
 });
 
-// 🚪 Logout
-window.logout = function () {
-  signOut(auth).then(() => {
-    window.location.href = "index.html";
+async function loadPerformance() {
+  const container = document.getElementById("performanceList");
+  const snap = await getDocs(query(collection(db, "results_published"), where("studentId", "==", linkedStudentId)));
+
+  if (snap.empty) {
+    container.innerHTML = `<div style="text-align:center; padding:40px; color:var(--muted)">No published records found.</div>`;
+    return;
+  }
+
+  let html = `<table><thead><tr><th>Assessment</th><th>Score</th><th>Breakdown</th><th>Result</th></tr></thead><tbody>`;
+  snap.forEach(doc => {
+    const r = doc.data();
+    const percent = ((r.obtainedMarks / r.maxMarks) * 100).toFixed(1);
+    html += `
+      <tr>
+        <td><b>${r.examTitle}</b><br><small class="text-muted">Ref: ${doc.id.substring(0,6)}</small></td>
+        <td><b style="font-size:16px;">${r.obtainedMarks}</b> / ${r.maxMarks}</td>
+        <td><small class="text-muted">${r.totalQuestions || 'N/A'} Questions</small></td>
+        <td><span class="badge ${percent > 40 ? 'status-approved' : 'status-pending'}">${percent}%</span></td>
+      </tr>`;
   });
+  container.innerHTML = html + `</tbody></table>`;
+}
+
+async function loadSeating() {
+  const container = document.getElementById("seatingList");
+  const snap = await getDocs(query(collection(db, "exam_slots"), where("studentId", "==", linkedStudentId)));
+
+  if (snap.empty) {
+    container.innerHTML = `<div style="text-align:center; padding:40px; color:var(--muted)">No seating assigned for upcoming exams.</div>`;
+    return;
+  }
+
+  let html = `<table><thead><tr><th>Exam</th><th>Session Time</th><th>Seating Assignment</th></tr></thead><tbody>`;
+  snap.forEach(doc => {
+    const s = doc.data();
+    html += `
+      <tr>
+        <td><b>${s.examTitle}</b></td>
+        <td>${s.slotTime || '--'}</td>
+        <td><div class="bench-tag">Room: ${s.classroom} • Bench: #${s.benchNumber}</div></td>
+      </tr>`;
+  });
+  container.innerHTML = html + `</tbody></table>`;
+}
+
+async function loadGrievances() {
+  const container = document.getElementById("grievanceList");
+  const snap = await getDocs(query(collection(db, "grievances"), where("studentId", "==", linkedStudentId)));
+
+  if (snap.empty) {
+    container.innerHTML = `<div style="text-align:center; padding:40px; color:var(--muted)">No active grievances reported.</div>`;
+    return;
+  }
+
+  let html = `<table><thead><tr><th>Date</th><th>Issue Category</th><th>Details</th><th>Status</th></tr></thead><tbody>`;
+  snap.forEach(doc => {
+    const g = doc.data();
+    html += `
+      <tr>
+        <td><small>${g.createdAt?.toDate().toLocaleDateString()}</small></td>
+        <td><b>${g.reason}</b></td>
+        <td><small class="text-muted">${g.details}</small></td>
+        <td><span class="badge ${g.status === 'Resolved' ? 'status-resolved' : 'status-pending'}">${g.status}</span></td>
+      </tr>`;
+  });
+  container.innerHTML = html + `</tbody></table>`;
+}
+
+async function loadReevaluation() {
+  const container = document.getElementById("reevalList");
+  const snap = await getDocs(query(collection(db, "reevaluation_requests"), where("studentId", "==", linkedStudentId)));
+
+  if (snap.empty) {
+    container.innerHTML = `<div style="text-align:center; padding:40px; color:var(--muted)">No re-evaluation requests found.</div>`;
+    return;
+  }
+
+  let html = `<table><thead><tr><th>Subject</th><th>Original Marks</th><th>Status</th><th>Faculty Comment</th></tr></thead><tbody>`;
+  snap.forEach(doc => {
+    const r = doc.data();
+    html += `
+      <tr>
+        <td><b>${r.examTitle}</b></td>
+        <td>${r.obtainedMarks} / ${r.maxMarks}</td>
+        <td><span class="badge ${r.status === 'Approved' ? 'status-approved' : 'status-pending'}">${r.status}</span></td>
+        <td><small class="text-muted italic">${r.facultyComment || 'In Process...'}</small></td>
+      </tr>`;
+  });
+  container.innerHTML = html + `</tbody></table>`;
+}
+
+window.showSection = function(id, btn) {
+  document.querySelectorAll(".section-content").forEach(s => s.classList.remove("active"));
+  document.querySelectorAll(".tab-item").forEach(t => t.classList.remove("active-tab"));
+  document.getElementById(id).classList.add("active");
+  btn.classList.add("active-tab");
+  lucide.createIcons();
 };
 
+window.logout = function() {
+  signOut(auth).then(() => window.location.href = "index.html");
+};
 </script>
 
 </body>

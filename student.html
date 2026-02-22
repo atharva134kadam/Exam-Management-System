@@ -5,6 +5,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -52,25 +54,43 @@ function updateUI() {
   document.getElementById("info-batch").innerText = studentData.batch;
   document.getElementById("info-email").innerText = studentData.email;
   document.getElementById("info-phone").innerText = studentData.phone || "N/A";
+  document.getElementById("reevalName").value = studentData.name;
 }
 
 async function loadDashboardData() {
     const respQuery = query(collection(db, "responses"), where("studentId", "==", auth.currentUser.uid));
     const respSnap = await getDocs(respQuery);
     const takenIds = respSnap.docs.map(d => d.data().examId);
-    await Promise.all([loadExams(takenIds), loadResults(respSnap), loadGrievanceOptions(respSnap), loadExistingGrievances()]);
+    
+    // NEW: Load Published Results
+    await Promise.all([
+    loadExams(takenIds),
+    loadPublishedResults(),
+    loadGrievanceOptions(),
+    loadExistingGrievances(),
+    loadReevaluationSubjects(),
+    loadReevaluationHistory(),
+    loadHallTicket()   // 👈 ADD THIS
+]);
 }
 
 /* ================= NAVIGATION ================= */
-window.showSection = function(id) {
-  document.querySelectorAll(".section-content").forEach(sec => sec.classList.remove("active"));
+window.showSection = function(id, el = null) {
+
+  document.querySelectorAll(".section-content")
+      .forEach(sec => sec.classList.remove("active"));
+
   document.getElementById(id).classList.add("active");
-  document.querySelectorAll(".tab-item").forEach(tab => tab.classList.remove("active-tab"));
-  if(event) event.currentTarget.classList.add("active-tab");
+
+  document.querySelectorAll(".tab-item")
+      .forEach(tab => tab.classList.remove("active-tab"));
+
+  if (el) el.classList.add("active-tab");
+
   lucide.createIcons();
 };
 
-/* ================= EXAMS & BENCH ================= */
+/* ================= EXAMS & BENCH (LOGIC UNTOUCHED) ================= */
 async function loadExams(takenIds) {
   const onlineContainer = document.getElementById("onlineExams");
   const offlineTableBody = document.getElementById("offlineTableBody");
@@ -97,76 +117,167 @@ async function loadExams(takenIds) {
   document.getElementById("offlineCard").style.display = hasOffline ? "block" : "none";
 }
 
-/* ================= SHARED UTILS ================= */
-async function loadResults(respSnap) {
+/* ================= RESULTS SECTION (PUBLISHED COLLECTION) ================= */
+async function loadPublishedResults() {
     const container = document.getElementById("resultsContainer");
-    container.innerHTML = respSnap.empty ? "<p class='text-muted'>No results published.</p>" : "";
-    for (const d of respSnap.docs) {
-        const res = d.data();
-        const examDoc = await getDoc(doc(db, "exams", res.examId));
-        container.innerHTML += `<div class="card list-item"><div><h4 class="m-0">${examDoc.exists() ? examDoc.data().title : 'Exam'}</h4><small class="text-accent font-bold">Score: ${res.autoScore}</small></div><button class="btn-outline" onclick="showSection('grievance')">Grievance</button></div>`;
-    }
-    lucide.createIcons();
+    const q = query(collection(db, "results_published"), where("studentId", "==", auth.currentUser.uid));
+    const snap = await getDocs(q);
+    
+    container.innerHTML = snap.empty ? "<p class='text-muted'>No official results published yet.</p>" : "";
+    
+    snap.forEach(docSnap => {
+        const res = docSnap.data();
+        const breakdownHTML = res.breakdown && res.breakdown.length > 0 ? `
+            <div class="result-breakdown mt-10">
+                <small class="font-bold text-accent">Question-wise Breakdown:</small>
+                <div class="breakdown-grid mt-5">
+                    ${res.breakdown.map((b, idx) => `
+                        <div class="breakdown-pill">
+                            Q${idx+1}: <span>${b.marks} Marks</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>` : '';
+
+        container.innerHTML += `
+    <div class="card result-card animate-in">
+        <div class="flex-between">
+            <div>
+                <h3 class="m-0">${res.examTitle}</h3>
+                <small class="text-muted">
+                    Published: ${res.publishedAt?.toDate().toLocaleDateString()}
+                </small>
+            </div>
+
+            <div>
+                <div class="final-score-box">
+                    <div class="score-main">${res.obtainedMarks ?? 0}</div>
+                </div>
+                <div style="margin-top:8px; font-size:12px; font-weight:700; text-align:center;">
+                    Max Marks: ${res.maxMarks ?? 0}
+                </div>
+            </div>
+
+        </div>
+        ${breakdownHTML}
+        <div class="mt-20">
+            <button class="btn-outline w-100" onclick="showSection('grievance')">
+                Dispute Result
+            </button>
+        </div>
+    </div>`;
+    });
 }
 
-async function loadGrievanceOptions(respSnap) {
+async function loadGrievanceOptions() {
+
     const select = document.getElementById("grievanceExamSelect");
-    select.innerHTML = '<option value="">Select Completed Exam</option>';
+    select.innerHTML = '<option value="">Select Exam</option>';
+
+    const addedExamIds = new Set();
+
+    /* ===============================
+       1️⃣ LOAD FROM RESPONSES
+    ================================ */
+    const respQuery = query(
+        collection(db, "responses"),
+        where("studentId", "==", auth.currentUser.uid)
+    );
+
+    const respSnap = await getDocs(respQuery);
+
     for (const d of respSnap.docs) {
         const res = d.data();
+
         const examDoc = await getDoc(doc(db, "exams", res.examId));
-        select.innerHTML += `<option value="${res.examId}">${examDoc.exists() ? examDoc.data().title : 'Archived'}</option>`;
+        if (!examDoc.exists()) continue;
+
+        const exam = examDoc.data();
+
+        const formattedDate = exam.date
+            ? new Date(exam.date).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric"
+            })
+            : "N/A";
+
+        select.innerHTML += `
+            <option value="${res.examId}">
+                ${exam.title.toUpperCase()} • ${formattedDate} • Completed
+            </option>
+        `;
+
+        addedExamIds.add(res.examId);
+    }
+
+    /* ===============================
+       2️⃣ LOAD FROM RESULTS_PUBLISHED
+    ================================ */
+    const pubQuery = query(
+        collection(db, "results_published"),
+        where("studentId", "==", auth.currentUser.uid)
+    );
+
+    const pubSnap = await getDocs(pubQuery);
+
+    for (const docSnap of pubSnap.docs) {
+        const result = docSnap.data();
+
+        const formattedDate = result.publishedAt?.toDate().toLocaleDateString("en-IN", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric"
+        }) || "N/A";
+
+        // If already added as completed, replace label with published version
+        if (addedExamIds.has(result.examId)) {
+
+            const existingOption = select.querySelector(`option[value="${result.examId}"]`);
+            if (existingOption) {
+                existingOption.textContent =
+                    `${result.examTitle.toUpperCase()} (${result.obtainedMarks}/${result.maxMarks}) • ${formattedDate} • Published`;
+            }
+
+        } else {
+
+            select.innerHTML += `
+                <option value="${result.examId}">
+                    ${result.examTitle.toUpperCase()} (${result.obtainedMarks}/${result.maxMarks}) • ${formattedDate} • Published
+                </option>
+            `;
+        }
+    }
+
+    // If still nothing
+    if (select.options.length === 1) {
+        select.innerHTML += `<option disabled>No Exams Available</option>`;
     }
 }
-
 window.submitGrievance = async function() {
     if(!grievanceExamSelect.value) return alert("Select an exam.");
     await addDoc(collection(db, "grievances"), { studentId: auth.currentUser.uid, studentName: studentData.name, dept: studentData.department, examId: grievanceExamSelect.value, reason: grievanceReason.value, details: grievanceDetails.value, status: "Open", createdAt: serverTimestamp() });
     alert("Support ticket raised."); location.reload();
 };
 
-/* ================= UPDATED GRIEVANCE HISTORY (FEEDS FROM COMMENTS) ================= */
 async function loadExistingGrievances() {
-    const container = document.getElementById("grievanceHistory");
     const q = query(collection(db, "grievances"), where("studentId", "==", auth.currentUser.uid));
     const snap = await getDocs(q);
     
     container.innerHTML = "";
-    
     for (const d of snap.docs) {
         const g = d.data();
         const gid = d.id;
-        
-        // Fetch Faculty Comment if Resolved
         let facultyCommentHTML = "";
         if (g.status === "Resolved") {
             const cq = query(collection(db, "comments_grievances"), where("grievanceId", "==", gid));
             const cSnap = await getDocs(cq);
             if (!cSnap.empty) {
                 const cData = cSnap.docs[0].data();
-                facultyCommentHTML = `
-                    <div class="faculty-response">
-                        <div class="flex-between">
-                            <small class="font-bold text-accent"><i data-lucide="message-square" size="12"></i> Faculty Feedback</small>
-                            <small class="text-muted">${cData.facultyName}</small>
-                        </div>
-                        <p class="m-0 mt-5" style="font-size:13px; font-style: italic;">"${cData.comment}"</p>
-                    </div>`;
+                facultyCommentHTML = `<div class="faculty-response"><p class="m-0" style="font-size:13px; font-style: italic;">"${cData.comment}"</p></div>`;
             }
         }
-
-        container.innerHTML += `
-            <div class="card mb-10">
-                <div class="flex-between">
-                    <div>
-                        <b style="font-size:15px;">${g.reason}</b>
-                        <p class="m-0 text-muted" style="font-size:12px;">Ref: ${gid.substring(0,8)}</p>
-                    </div>
-                    <span class="status-badge ${g.status.toLowerCase()}">${g.status}</span>
-                </div>
-                <p class="mt-10 mb-10" style="font-size:14px; border-left: 3px solid var(--border); padding-left: 10px;">${g.details}</p>
-                ${facultyCommentHTML}
-            </div>`;
+        grievanceHistory.innerHTML += `<div class="card mb-10"><div class="flex-between"><b>${g.reason}</b><span class="status-badge resolved">${g.status}</span></div>${facultyCommentHTML}</div>`;
     }
     lucide.createIcons();
 }
@@ -196,6 +307,333 @@ window.submitResponses = async function(eid, forced = false) {
     location.reload();
 };
 
+async function loadReevaluationSubjects() {
+
+    const select = document.getElementById("reevalSubjectSelect");
+    select.innerHTML = '<option value="">Select Published Subject</option>';
+
+    const q = query(
+        collection(db, "results_published"),
+        where("studentId", "==", auth.currentUser.uid)
+    );
+
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+        select.innerHTML += `<option disabled>No Published Results</option>`;
+        return;
+    }
+
+    snap.forEach(docSnap => {
+        const res = docSnap.data();
+
+        select.innerHTML += `
+            <option value="${docSnap.id}">
+                ${res.examTitle.toUpperCase()} (${res.obtainedMarks}/${res.maxMarks})
+            </option>
+        `;
+    });
+}
+
+window.submitReevaluation = async function() {
+
+    const subjectId = document.getElementById("reevalSubjectSelect").value;
+    const reason = document.getElementById("reevalReason").value.trim();
+
+    if (!subjectId || !reason) {
+        alert("Please fill all fields.");
+        return;
+    }
+
+    const resultDoc = await getDoc(doc(db, "results_published", subjectId));
+    if (!resultDoc.exists()) return alert("Invalid Subject");
+
+    const resultData = resultDoc.data();
+
+    await addDoc(collection(db, "reevaluation_requests"), {
+        studentId: auth.currentUser.uid,
+        studentName: studentData.name,
+        department: studentData.department,
+        examId: resultData.examId,
+        examTitle: resultData.examTitle,
+        obtainedMarks: resultData.obtainedMarks,
+        maxMarks: resultData.maxMarks,
+        reason: reason,
+        status: "Pending",
+        createdAt: serverTimestamp()
+    });
+
+    alert("Re-Evaluation request submitted successfully.");
+
+    document.getElementById("reevalReason").value = "";
+    loadReevaluationHistory();
+};
+
+async function loadReevaluationHistory() {
+
+    const container = document.getElementById("reevalHistory");
+    container.innerHTML = "";
+
+    const q = query(
+        collection(db, "reevaluation_requests"),
+        where("studentId", "==", auth.currentUser.uid)
+    );
+
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+        container.innerHTML = "<p style='color:var(--muted)'>No re-evaluation applications submitted yet.</p>";
+        return;
+    }
+
+    snap.forEach(docSnap => {
+        const data = docSnap.data();
+
+        const pdfButton = data.answerSheetURL
+            ? `<a href="${data.answerSheetURL}" target="_blank" 
+                class="btn-outline" 
+                style="margin-top:12px; display:inline-block;">
+                View Answer Sheet (PDF)
+               </a>`
+            : `<span style="font-size:12px; color:var(--muted); display:block; margin-top:10px;">
+                Answer sheet not uploaded yet.
+               </span>`;
+
+        container.innerHTML += `
+            <div class="card mb-10">
+                <div class="flex-between">
+                    <div>
+                        <b>${data.examTitle}</b><br>
+                        <small style="color:var(--muted)">
+                            Marks: ${data.obtainedMarks}/${data.maxMarks}
+                        </small>
+                    </div>
+                    <span class="status-badge">${data.status}</span>
+                </div>
+
+                <div style="margin-top:10px;">
+                    <small><b>Reason:</b> ${data.reason}</small>
+                </div>
+
+                ${pdfButton}
+            </div>
+        `;
+    });
+}
+
+async function loadHallTicket() {
+
+    const container = document.getElementById("hallTicketContainer");
+    container.innerHTML = "<p>Loading hall ticket...</p>";
+
+    try {
+        const q = query(
+            collection(db, "hall_tickets"),
+            where("studentId", "==", auth.currentUser.uid),
+            where("status", "==", "active")
+        );
+
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            container.innerHTML = `
+                <div class="card">
+                    <h3>No Active Hall Ticket</h3>
+                    <p>Please contact examination cell.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const hall = snap.docs[0].data();
+
+        container.innerHTML = `
+            <div class="card" style="border-left:6px solid var(--accent);">
+                <h3 style="margin-bottom:10px;">🎫 Examination Hall Ticket</h3>
+
+                <p><strong>Exam Series:</strong> ${hall.seriesName}</p>
+                <p><strong>Student Name:</strong> ${hall.studentName}</p>
+                <p><strong>PRN:</strong> ${hall.prn}</p>
+                <p><strong>Department:</strong> ${hall.department}</p>
+                <p><strong>Batch:</strong> ${hall.batch}</p>
+
+                <hr style="margin:15px 0;">
+
+                <h4>Subjects:</h4>
+
+                <table class="tt-table">
+                    <thead>
+                        <tr>
+                            <th>Subject</th>
+                            <th>Date</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${hall.subjects.map(sub => `
+                            <tr>
+                                <td>${sub.title}</td>
+                                <td>${sub.date}</td>
+                                <td>${sub.time}</td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+
+                <button 
+                    id="downloadHallBtn"
+                    class="action-btn w-100"
+                    style="margin-top:20px;">
+                    Download Official Hall Ticket (PDF)
+                </button>
+            </div>
+        `;
+
+        // ✅ Attach download event AFTER rendering
+        document
+            .getElementById("downloadHallBtn")
+            .addEventListener("click", downloadHallTicket);
+
+    } catch (error) {
+        console.error("Error loading hall ticket:", error);
+        container.innerHTML = `
+            <div class="card">
+                <h3>Error</h3>
+                <p>Unable to load hall ticket.</p>
+            </div>
+        `;
+    }
+}
+
+window.downloadHallTicket = async function () {
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    const q = query(
+        collection(db, "hall_tickets"),
+        where("studentId", "==", auth.currentUser.uid),
+        where("status", "==", "active")
+    );
+
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+        alert("No active hall ticket found.");
+        return;
+    }
+
+    const hall = snap.docs[0].data();
+
+    // ===== HEADER BAR =====
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, 210, 30, "F");
+
+    // ===== LOAD LOGO =====
+  // ===== LOAD LOGO SAFELY =====
+let logoLoaded = false;
+const logo = new Image();
+logo.src = "assets/mit-logo.png";
+
+await new Promise(resolve => {
+    logo.onload = () => {
+        logoLoaded = true;
+        resolve();
+    };
+    logo.onerror = () => {
+        console.warn("Logo not found. Continuing without logo.");
+        resolve(); // continue even if logo fails
+    };
+});
+
+// Add logo only if loaded
+if (logoLoaded) {
+    doc.addImage(logo, "PNG", 10, 5, 25, 20);
+}
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont(undefined, "bold");
+    doc.text("MIT Academy of Engineering, Alandi", 115, 15, null, null, "center");
+
+    doc.setFontSize(12);
+    doc.setFont(undefined, "normal");
+    doc.text("EXAMINATION HALL TICKET", 115, 23, null, null, "center");
+
+    doc.setTextColor(0, 0, 0);
+
+    // ===== STUDENT DETAILS =====
+    doc.setFillColor(239, 246, 255);
+    doc.rect(15, 40, 180, 55, "F");
+
+    doc.setFontSize(12);
+    doc.setFont(undefined, "bold");
+    doc.setTextColor(37, 99, 235);
+    doc.text("Student Information", 20, 50);
+
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(0, 0, 0);
+
+    doc.text(`Name: ${hall.studentName}`, 20, 60);
+    doc.text(`PRN: ${hall.prn}`, 20, 70);
+    doc.text(`Department: ${hall.department}`, 20, 80);
+    doc.text(`Batch: ${hall.batch}`, 20, 90);
+
+    // ===== SUBJECT TABLE =====
+    doc.setFillColor(37, 99, 235);
+    doc.rect(20, 105, 170, 10, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont(undefined, "bold");
+    doc.text("Subject", 25, 112);
+    doc.text("Date", 115, 112);
+    doc.text("Time", 155, 112);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, "normal");
+
+    let y = 125;
+
+    hall.subjects.forEach(sub => {
+        doc.text(sub.title, 25, y);
+        doc.text(sub.date, 115, y);
+        doc.text(sub.time, 155, y);
+        y += 10;
+    });
+
+    // ===== QR CODE =====
+    const qrData = `PRN: ${hall.prn} | Series: ${hall.seriesName}`;
+    const qrDiv = document.createElement("div");
+
+    new QRCode(qrDiv, {
+        text: qrData,
+        width: 80,
+        height: 80
+    });
+
+    const canvas = qrDiv.querySelector("canvas");
+
+    if (canvas) {
+        const qrImgData = canvas.toDataURL("image/png");
+        doc.addImage(qrImgData, "PNG", 150, 50, 40, 40);
+    }
+
+    // ===== SIGNATURE =====
+    doc.line(20, 250, 80, 250);
+    doc.text("Controller of Examinations", 20, 260);
+
+    doc.line(130, 250, 190, 250);
+    doc.text("Principal Signature", 130, 260);
+
+    doc.setFontSize(10);
+    doc.text(
+        "Carry this hall ticket along with valid college ID. Without it entry is strictly prohibited.",
+        20,
+        280
+    );
+
+    doc.save(`${hall.seriesName}_Official_Hall_Ticket.pdf`);
+};
 window.logoutUser = () => signOut(auth).then(() => window.location.href = "login.html");
 </script>
 
@@ -203,7 +641,7 @@ window.logoutUser = () => signOut(auth).then(() => window.location.href = "login
 :root { --primary: #0f172a; --accent: #2563eb; --bg: #f8fafc; --white: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --orange: #f59e0b; --red: #ef4444; }
 body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
 
-/* Premium Header */
+/* Dashboard Shell */
 .navbar { background: var(--primary); color: white; padding: 12px 5%; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
 .welcome-card { background: var(--primary); color: white; padding: 40px 5% 80px 5%; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 20px; }
 .stats-box { display: flex; gap: 15px; background: rgba(255,255,255,0.05); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); }
@@ -213,23 +651,20 @@ body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background: var(-
 .tab-item { flex: 1; padding: 14px 24px; border-radius: 100px; border: none; background: none; cursor: pointer; font-weight: 600; color: var(--muted); transition: 0.3s; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 10px; }
 .active-tab { background: var(--primary); color: white; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.3); }
 
-/* Cards & Grid */
+/* Cards */
 .main-content { max-width: 1000px; margin: 0 auto 50px auto; padding: 0 15px; }
 .section-content { display: none; }
 .section-content.active { display: block; animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 .card { background: var(--white); border-radius: 24px; padding: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 25px; border: 1px solid var(--border); }
 
-/* Faculty Response Style */
-.faculty-response { background: #f0f7ff; border: 1px dashed var(--accent); border-radius: 16px; padding: 15px; margin-top: 15px; }
-
-/* Status Badges */
-.status-badge { font-size: 10px; padding: 5px 12px; border-radius: 100px; font-weight: 800; text-transform: uppercase; }
-.status-badge.open { background: #fff7ed; color: var(--orange); }
-.status-badge.resolved { background: #dcfce7; color: #166534; }
-
-/* Bench & Seating UI */
-.bench-tag { background: #eff6ff; color: var(--accent); padding: 10px 14px; border-radius: 14px; font-size: 13px; border-left: 5px solid var(--accent); font-weight: 700; }
-.badge-pending { background: #fff7ed; color: var(--orange); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+/* Published Results UI */
+.result-card { border-left: 6px solid var(--accent); }
+.final-score-box { text-align: center; background: var(--primary); color: white; padding: 10px 20px; border-radius: 16px; }
+.score-main { font-size: 28px; font-weight: 900; line-height: 1; }
+.score-total { font-size: 10px; opacity: 0.7; margin-top: 4px; font-weight: 700; }
+.breakdown-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.breakdown-pill { background: #f1f5f9; padding: 4px 12px; border-radius: 8px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); }
+.breakdown-pill span { color: var(--accent); font-weight: 800; }
 
 /* Portfolio Styles */
 .port-hero { text-align: center; padding: 20px 0 30px 0; border-bottom: 1px solid var(--border); margin-bottom: 30px; }
@@ -238,31 +673,28 @@ body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background: var(-
 .info-group label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); font-weight: 800; margin-bottom: 6px; }
 .info-group p { font-weight: 700; margin: 0; font-size: 15px; color: var(--primary); }
 
-/* Table Styles */
+/* Table UI */
 .tt-table { width: 100%; border-collapse: collapse; }
 .tt-table th { text-align: left; padding: 15px; color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 800; border-bottom: 2px solid var(--bg); }
 .tt-table td { padding: 18px 15px; border-bottom: 1px solid var(--bg); font-size: 14px; }
+.bench-tag { background: #eff6ff; color: var(--accent); padding: 10px 14px; border-radius: 14px; font-size: 13px; border-left: 5px solid var(--accent); font-weight: 700; }
 
-/* List Items */
-.list-item { display: flex; justify-content: space-between; align-items: center; padding: 20px 25px; border-radius: 20px; transition: 0.3s; }
-.icon-bg { width: 45px; height: 45px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
-.blue-icon { background: #eff6ff; color: var(--accent); }
-.orange-icon { background: #fff7ed; color: var(--orange); }
-
-/* Buttons & Inputs */
+/* Buttons & Elements */
 .action-btn { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.3s; }
-.btn-outline { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 8px 16px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+.btn-outline { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 8px 16px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+.btn-outline:hover { background: var(--accent); color: white; }
 select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px solid var(--border); background: #fcfdfe; font-size: 14px; box-sizing: border-box; }
+.status-badge { font-size: 10px; padding: 5px 12px; border-radius: 100px; font-weight: 800; text-transform: uppercase; background: #dcfce7; color: #166534; }
 
-/* Exam Portal Overlay */
+/* Helpers */
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.m-0 { margin: 0; } .mt-10 { margin-top: 10px; } .mt-20 { margin-top: 20px; } .w-100 { width: 100%; }
+
+/* Portal Layout */
 .exam-portal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--white); z-index: 2000; display: none; overflow-y: auto; }
 .portal-active { display: block; animation: slideUp 0.4s ease; }
 .p-head { background: var(--primary); color: white; padding: 20px 10%; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; }
-.opt-label { display: block; padding: 16px; background: #f8fafc; border: 1px solid var(--border); border-radius: 15px; margin-top: 15px; cursor: pointer; transition: 0.2s; font-weight: 600; }
-.submit-btn { background: #10b981; color: white; border: none; padding: 20px; border-radius: 15px; font-size: 18px; font-weight: 800; width: 100%; cursor: pointer; margin: 50px 0; }
-
-.flex-between { display: flex; justify-content: space-between; align-items: center; }
-.text-accent { color: var(--accent); } .font-bold { font-weight: 800; } .m-0 { margin: 0; } .mt-5 { margin-top: 5px; } .mt-10 { margin-top: 10px; } .mb-10 { margin-bottom: 10px; } .w-100 { width: 100%; }
+.p-body { max-width: 800px; margin: 40px auto; padding: 0 20px; }
 
 @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 </style>
@@ -283,7 +715,7 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
 <header class="welcome-card">
   <div>
       <h1 class="m-0" style="font-size: clamp(24px, 5vw, 36px);">Student Workspace</h1>
-      <p style="color:rgba(255,255,255,0.5); margin-top:10px; font-weight:500;">Academic Portfolio & Proctored Assessments</p>
+      <p style="color:rgba(255,255,255,0.5); margin-top:10px; font-weight:500;">Official Grading & Performance Audit</p>
   </div>
   <div class="stats-box">
     <div style="text-align:center; min-width:70px;"><h3>9.2</h3><small>CGPA</small></div>
@@ -292,10 +724,13 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
 </header>
 
 <div class="tabs-container">
-  <button class="tab-item active-tab" onclick="showSection('portfolio')"><i data-lucide="user-circle"></i> Portfolio</button>
-  <button class="tab-item" onclick="showSection('exams')"><i data-lucide="calendar"></i> Examinations</button>
-  <button class="tab-item" onclick="showSection('results')"><i data-lucide="award"></i> Results</button>
-  <button class="tab-item" onclick="showSection('grievance')"><i data-lucide="help-circle"></i> Help Desk</button>
+  <button class="tab-item active-tab" onclick="showSection('portfolio', this)"><i data-lucide="user-circle"></i> Portfolio</button>
+  <button class="tab-item active-tab" onclick="showSection('exams', this)"><i data-lucide="calendar"></i> Examinations</button>
+  <button class="tab-item active-tab" onclick="showSection('results', this)"><i data-lucide="award"></i> Results</button>
+  <button class="tab-item active-tab" onclick="showSection('grievance', this)"><i data-lucide="help-circle"></i> Help Desk</button>
+  <button class="tab-item active-tab" onclick="showSection('reevaluation', this)">
+  <i data-lucide="refresh-cw"></i> Re-Evaluation
+</button>
 </div>
 
 <div class="main-content">
@@ -303,7 +738,7 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
     <div class="card">
         <div class="port-hero">
             <div id="u-initials" class="p-avatar">--</div>
-            <h2 id="port-name" class="m-0" style="font-size:28px; letter-spacing:-0.5px;">--</h2>
+            <h2 id="port-name" class="m-0">--</h2>
             <p id="port-dept" style="color:var(--accent); font-weight:700; margin-top:5px; text-transform:uppercase; font-size:12px;">--</p>
         </div>
         <div class="info-grid">
@@ -318,16 +753,18 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
   </div>
 
   <div id="exams" class="section-content">
+    <div id="hallTicketContainer">
+        
+    </div>
     <div class="card">
       <h3 style="margin:0 0 20px 0; display:flex; align-items:center; gap:10px;"><i data-lucide="monitor" class="text-accent"></i> Online Proctored Assessments</h3>
       <div id="onlineExams"></div>
     </div>
-    
     <div class="card" id="offlineCard">
       <h3 style="margin:0 0 20px 0; display:flex; align-items:center; gap:10px;"><i data-lucide="layout" class="text-accent"></i> Time Table & Allotted Bench</h3>
       <div style="overflow-x:auto;">
           <table class="tt-table">
-            <thead><tr><th></th><th>Exam Subject</th><th>Date</th><th>Time</th><th>Bench Allocation</th></tr></thead>
+            <thead><tr><th></th><th>Subject</th><th>Date</th><th>Time</th><th>Bench Allocation</th></tr></thead>
             <tbody id="offlineTableBody"></tbody>
           </table>
       </div>
@@ -336,7 +773,7 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
 
   <div id="results" class="section-content">
     <div class="card">
-        <h3 style="margin:0 0 20px 0;">Performance Audit</h3>
+        <h3 style="margin:0 0 20px 0;">Performance Analytics (Published)</h3>
         <div id="resultsContainer"></div>
     </div>
   </div>
@@ -344,19 +781,46 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
   <div id="grievance" class="section-content">
     <div class="card">
       <h3 style="margin:0;">Dispute Resolution</h3>
-      <p style="color:var(--muted); font-size:13px; margin:10px 0 25px 0;">File a formal grievance for grade discrepancies or seating errors.</p>
+      <p style="color:var(--muted); font-size:13px; margin:10px 0 25px 0;">File a formal dispute for grade discrepancies or seating errors.</p>
       <select id="grievanceExamSelect" style="margin-bottom:15px;"></select>
       <select id="grievanceReason" style="margin-bottom:15px;">
           <option value="Marks Mismatch">Marks Mismatch</option>
-          <option value="Seating Issue">Seating Allocation Error</option>
-          <option value="Proctoring Dispute">Technical Proctoring Dispute</option>
+    <option value="Seating Issue">Seating Allocation Error</option>
+    <option value="Result Not Published">Result Not Published</option>
+    <option value="Absent Marked Present Issue">Absent/Present Status Error</option>
+    <option value="Internal Marks Issue">Internal Marks Discrepancy</option>
+    <option value="Question Evaluation Issue">Specific Question Evaluation Issue</option>
+    <option value="Wrong Subject Assigned">Wrong Subject Assigned</option>
+    <option value="Technical Issue During Exam">Technical Issue During Online Exam</option>
       </select>
-      <textarea id="grievanceDetails" rows="4" placeholder="Describe your concern with evidence..."></textarea>
+      <textarea id="grievanceDetails" rows="4" placeholder="Describe your concern..."></textarea>
       <button class="action-btn w-100" style="margin-top:25px;" onclick="submitGrievance()">Submit Dispute Ticket</button>
     </div>
-    <h4 style="margin:30px 0 15px 0; color:var(--muted)">Submission History</h4>
-    <div id="grievanceHistory"></div>
+    <div id="grievanceHistory" class="mt-20"></div>
   </div>
+</div>
+
+<div id="reevaluation" class="section-content">
+  <div class="card">
+    <h3 style="margin:0;">Apply for Re-Evaluation</h3>
+    <p style="color:var(--muted); font-size:13px; margin:10px 0 25px 0;">
+      Request re-checking of evaluated answer sheets.
+    </p>
+
+    <input type="text" id="reevalName" readonly style="margin-bottom:15px;" />
+
+    <select id="reevalSubjectSelect" style="margin-bottom:15px;">
+      <option value="">Select Published Subject</option>
+    </select>
+
+    <textarea id="reevalReason" rows="4" placeholder="Enter reason for re-evaluation..."></textarea>
+
+    <button class="action-btn w-100" style="margin-top:25px;" onclick="submitReevaluation()">
+      Submit Re-Evaluation Request
+    </button>
+  </div>
+
+  <div id="reevalHistory" class="mt-20"></div>
 </div>
 
 <div id="examPortal" class="exam-portal"></div>

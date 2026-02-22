@@ -384,6 +384,9 @@
         <div class="sidebar-item" id="createMenu" style="display:none;" onclick="loadMergedView()">
             <i class="fas fa-users-cog"></i> Accounts Management
         </div>
+        <div class="sidebar-item" onclick="loadReports()">
+    <i class="fas fa-chart-bar"></i> Reports
+</div>
         
     </div>
 
@@ -442,16 +445,65 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 // ---------- HOME ----------
-window.loadHome = function() {
+window.loadHome = async function() {
     const content = document.getElementById("mainContent");
+
+    const usersSnapshot = await getDocs(collection(db, "users"));
+
+    let studentCount = 0;
+    let facultyCount = 0;
+    let parentCount = 0;
+
+    let departmentSet = new Set(); // to store unique departments
+
+    usersSnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        if (data.role === "student") studentCount++;
+        else if (data.role === "faculty") facultyCount++;
+        else if (data.role === "parent") parentCount++;
+
+        if (data.department) {
+            departmentSet.add(data.department);
+        }
+    });
+
+    const departmentCount = departmentSet.size;
+
     content.innerHTML = `
         <div class="card">
             <h3><i class="fas fa-rainbow"></i> Welcome, ${currentRole}</h3>
-            <p style="font-size:1.2rem; color:#2f607a;">Manage users, roles, and everything from the merged panel.</p>
-            <div style="margin-top:1.5rem; display:flex; gap:1rem;">
-                <div style="background:#e5f2fb; padding:1rem 2rem; border-radius:30px;"><i class="fas fa-user-graduate"></i> Students</div>
-                <div style="background:#e0f0e2; padding:1rem 2rem; border-radius:30px;"><i class="fas fa-chalkboard-teacher"></i> Faculty</div>
+            <p style="font-size:1.1rem; color:#2f607a;">
+                Overview of system statistics.
+            </p>
+        </div>
+
+        <div style="display:flex; gap:1.5rem; flex-wrap:wrap;">
+            
+            <div class="card" style="flex:1; min-width:220px; text-align:center;">
+                <i class="fas fa-user-graduate" style="font-size:2rem; color:#1abc9c;"></i>
+                <h2>${studentCount}</h2>
+                <p>Total Students</p>
             </div>
+
+            <div class="card" style="flex:1; min-width:220px; text-align:center;">
+                <i class="fas fa-chalkboard-teacher" style="font-size:2rem; color:#27ae60;"></i>
+                <h2>${facultyCount}</h2>
+                <p>Total Faculty</p>
+            </div>
+
+            <div class="card" style="flex:1; min-width:220px; text-align:center;">
+                <i class="fas fa-user-friends" style="font-size:2rem; color:#f39c12;"></i>
+                <h2>${parentCount}</h2>
+                <p>Total Parents</p>
+            </div>
+
+            <div class="card" style="flex:1; min-width:220px; text-align:center;">
+                <i class="fas fa-building" style="font-size:2rem; color:#34495e;"></i>
+                <h2>${departmentCount}</h2>
+                <p>Total Departments</p>
+            </div>
+
         </div>
     `;
 };
@@ -737,6 +789,147 @@ window.viewUserDetails = async function(uid) {
     document.getElementById("mainContent").innerHTML = html;
 };
 
+window.loadReports = async function() {
+
+    const content = document.getElementById("mainContent");
+
+    content.innerHTML = `
+        <div class="card">
+            <h3><i class="fas fa-chart-line"></i> Department Performance Reports</h3>
+            <div style="margin-bottom:15px;">
+                <label>Select Department</label>
+                <select id="reportDeptSelect" onchange="generateDepartmentReport()">
+                    <option value="">-- Select Department --</option>
+                </select>
+            </div>
+            <div id="reportTableContainer"></div>
+            <button class="logout-btn" 
+                    style="background:#1abc9c; margin-top:20px;"
+                    onclick="downloadFullReport()">
+                <i class="fas fa-download"></i> Download Full Report
+            </button>
+        </div>
+    `;
+
+    // Load unique departments
+    const usersSnap = await getDocs(collection(db, "users"));
+    const deptSet = new Set();
+
+    usersSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.department) deptSet.add(data.department);
+    });
+
+    const select = document.getElementById("reportDeptSelect");
+    deptSet.forEach(dept => {
+        select.innerHTML += `<option value="${dept}">${dept}</option>`;
+    });
+};
+
+window.generateDepartmentReport = async function() {
+
+    const dept = document.getElementById("reportDeptSelect").value;
+    if (!dept) return;
+
+    const container = document.getElementById("reportTableContainer");
+    container.innerHTML = "Loading report...";
+
+    const usersSnap = await getDocs(collection(db, "users"));
+    const resultsSnap = await getDocs(collection(db, "results_published"));
+    const grievanceSnap = await getDocs(collection(db, "grievances"));
+    const reevalSnap = await getDocs(collection(db, "reevaluation_requests"));
+
+    let reportRows = "";
+    let fullReportData = [];
+
+    usersSnap.forEach(userDoc => {
+        const user = userDoc.data();
+        if (user.role !== "student" || user.department !== dept) return;
+
+        const studentId = userDoc.id;
+
+        // Filter student results
+        const studentResults = resultsSnap.docs.filter(r =>
+            r.data().studentId === studentId
+        );
+
+        const totalMarks = studentResults.reduce((sum, r) =>
+            sum + (r.data().obtainedMarks || 0), 0);
+
+        const grievanceCount = grievanceSnap.docs.filter(g =>
+            g.data().studentId === studentId
+        ).length;
+
+        const reevalCount = reevalSnap.docs.filter(r =>
+            r.data().studentId === studentId
+        ).length;
+
+        reportRows += `
+            <tr>
+                <td>${user.name}</td>
+                <td>${user.prn || "-"}</td>
+                <td>${totalMarks}</td>
+                <td>${studentResults.length}</td>
+                <td>${grievanceCount}</td>
+                <td>${reevalCount}</td>
+            </tr>
+        `;
+
+        fullReportData.push({
+            name: user.name,
+            prn: user.prn,
+            department: dept,
+            totalMarks,
+            exams: studentResults.length,
+            grievances: grievanceCount,
+            reevaluations: reevalCount
+        });
+    });
+
+    window.__FULL_REPORT__ = fullReportData;
+
+    container.innerHTML = `
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>PRN</th>
+                    <th>Total Marks</th>
+                    <th>Exams Appeared</th>
+                    <th>Grievances</th>
+                    <th>Re-evaluations</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${reportRows || `<tr><td colspan="6">No Data</td></tr>`}
+            </tbody>
+        </table>
+    `;
+};
+
+window.downloadFullReport = function() {
+
+    if (!window.__FULL_REPORT__ || window.__FULL_REPORT__.length === 0) {
+        alert("Generate report first.");
+        return;
+    }
+
+    let csv = "Name,PRN,Department,Total Marks,Exams,Grievances,Reevaluations\n";
+
+    window.__FULL_REPORT__.forEach(row => {
+        csv += `${row.name},${row.prn},${row.department},${row.totalMarks},${row.exams},${row.grievances},${row.reevaluations}\n`;
+    });
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "department_report.csv";
+    a.click();
+
+    window.URL.revokeObjectURL(url);
+};
 window.logout = function() { signOut(auth).then(() => window.location.href = "index.html"); };
 
 // expose necessary globals
