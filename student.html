@@ -261,34 +261,147 @@ window.submitGrievance = async function() {
 };
 
 async function loadExistingGrievances() {
-    const q = query(collection(db, "grievances"), where("studentId", "==", auth.currentUser.uid));
+
+    const container = document.getElementById("grievanceHistory");
+    container.innerHTML = "<p>Loading grievances...</p>";
+
+    const q = query(
+        collection(db, "grievances"),
+        where("studentId", "==", auth.currentUser.uid)
+    );
+
     const snap = await getDocs(q);
-    
-    container.innerHTML = "";
-    for (const d of snap.docs) {
-        const g = d.data();
-        const gid = d.id;
-        let facultyCommentHTML = "";
-        if (g.status === "Resolved") {
-            const cq = query(collection(db, "comments_grievances"), where("grievanceId", "==", gid));
-            const cSnap = await getDocs(cq);
-            if (!cSnap.empty) {
-                const cData = cSnap.docs[0].data();
-                facultyCommentHTML = `<div class="faculty-response"><p class="m-0" style="font-size:13px; font-style: italic;">"${cData.comment}"</p></div>`;
-            }
-        }
-        grievanceHistory.innerHTML += `<div class="card mb-10"><div class="flex-between"><b>${g.reason}</b><span class="status-badge resolved">${g.status}</span></div>${facultyCommentHTML}</div>`;
+
+    if (snap.empty) {
+        container.innerHTML = "<p style='color:var(--muted)'>No grievances submitted yet.</p>";
+        return;
     }
+
+    container.innerHTML = "";
+
+    // 🔥 Sort latest first
+    const grievances = snap.docs.sort((a, b) =>
+        b.data().createdAt?.seconds - a.data().createdAt?.seconds
+    );
+
+    for (const docSnap of grievances) {
+
+        const g = docSnap.data();
+        const grievanceId = docSnap.id;
+
+        let facultyCommentHTML = "";
+        let facultyName = "";
+
+        // 🔍 Load faculty comment (if exists)
+        const commentQuery = query(
+            collection(db, "comments_grievances"),
+            where("grievanceId", "==", grievanceId)
+        );
+
+        const commentSnap = await getDocs(commentQuery);
+
+        if (!commentSnap.empty) {
+            const commentData = commentSnap.docs[0].data();
+            facultyName = commentData.facultyName || "Faculty";
+            facultyCommentHTML = `
+                <div style="margin-top:12px; padding:12px; background:#f1f5f9; border-radius:10px;">
+                    <small style="font-weight:700;">Response by ${facultyName}</small>
+                    <p style="margin:5px 0 0 0; font-size:13px;">
+                        "${commentData.comment}"
+                    </p>
+                </div>
+            `;
+        }
+
+        const statusColor =
+            g.status === "Resolved"
+            ? "background:#dcfce7; color:#166534;"
+            : "background:#fef3c7; color:#92400e;";
+
+        container.innerHTML += `
+            <div class="card mb-10">
+                <div class="flex-between">
+                    <div>
+                        <b>${g.reason}</b><br>
+                        <small style="color:var(--muted)">
+                            Exam ID: ${g.examId}
+                        </small>
+                    </div>
+                    <span class="status-badge" style="${statusColor}">
+                        ${g.status}
+                    </span>
+                </div>
+
+                <div style="margin-top:10px;">
+                    <small><b>Details:</b> ${g.details || "—"}</small>
+                </div>
+
+                <div style="margin-top:5px;">
+                    <small style="color:var(--muted)">
+                        Submitted on: 
+                        ${g.createdAt?.toDate().toLocaleString() || "N/A"}
+                    </small>
+                </div>
+
+                ${facultyCommentHTML}
+            </div>
+        `;
+    }
+
     lucide.createIcons();
 }
 
+let examTimerInterval = null;
+let remainingSeconds = 0;
+
 window.takeExam = async function(eid) {
+
     const docSnap = await getDoc(doc(db, "exams", eid));
-    const exam = docSnap.data(); cheatWarnings = 0; setupAntiCheat(eid);
+    const exam = docSnap.data();
+
+    cheatWarnings = 0;
+    setupAntiCheat(eid);
+
+    // ⏳ Set duration (in seconds)
+    remainingSeconds = (exam.duration || 60) * 60;
+
     examPortal.classList.add("portal-active");
-    examPortal.innerHTML = `<div class="p-head"><h2>${exam.title}</h2><div id="w-count" class="w-pill">Warnings: 0/3</div></div><div class="p-body">
-    ${exam.questions.map((q, i) => `<div class="card mb-20"><b>Q${i+1}.</b> ${q.text}<br>${q.type==='mcq' ? q.options.map((o, idx) => `<label class="opt-label"><input type="radio" name="q_${q.id}" value="${idx}"> ${o}</label>`).join('') : `<textarea name="q_${q.id}"></textarea>`}</div>`).join('')}
-    <button class="submit-btn" onclick="submitResponses('${eid}')">Submit Examination</button></div>`;
+
+    examPortal.innerHTML = `
+        <div class="p-head">
+            <h2>${exam.title}</h2>
+            <div style="display:flex; gap:15px; align-items:center;">
+                <div id="timerBox" class="w-pill" 
+                     style="background:#ef4444; color:white; padding:8px 15px; border-radius:12px; font-weight:800;">
+                    Time Left: ${formatTime(remainingSeconds)}
+                </div>
+                <div id="w-count" class="w-pill">Warnings: 0/3</div>
+            </div>
+        </div>
+
+        <div class="p-body">
+            ${exam.questions.map((q, i) => `
+                <div class="card mb-20">
+                    <b>Q${i+1}.</b> ${q.text}<br>
+                    ${
+                        q.type==='mcq'
+                        ? q.options.map((o, idx) =>
+                            `<label class="opt-label">
+                                <input type="radio" name="q_${q.id}" value="${idx}"> ${o}
+                             </label>`).join('')
+                        : `<textarea name="q_${q.id}"></textarea>`
+                    }
+                </div>
+            `).join('')}
+
+            <button id="submitBtn" class="submit-btn"
+                    onclick="submitResponses('${eid}')">
+                Submit Examination
+            </button>
+        </div>
+    `;
+
+    startTimer(eid);
 };
 
 function setupAntiCheat(eid) {
@@ -296,16 +409,87 @@ function setupAntiCheat(eid) {
 }
 
 window.submitResponses = async function(eid, forced = false) {
+
+    clearInterval(examTimerInterval);
+
+    const submitBtn = document.getElementById("submitBtn");
+    if (submitBtn) submitBtn.disabled = true;
+
     const examSnap = await getDoc(doc(db, "exams", eid));
     const exam = examSnap.data();
-    let responses = {}, score = 0;
+
+    let responses = {};
+    let score = 0;
+
     exam.questions.forEach(q => {
-        const input = q.type === 'mcq' ? document.querySelector(`input[name="q_${q.id}"]:checked`) : document.querySelector(`textarea[name="q_${q.id}"]`);
-        if (input) { responses[q.id] = input.value; if (q.type === 'mcq' && input.value == q.correctAnswer) score += Number(q.marks); }
+
+        const input =
+            q.type === 'mcq'
+            ? document.querySelector(`input[name="q_${q.id}"]:checked`)
+            : document.querySelector(`textarea[name="q_${q.id}"]`);
+
+        if (input) {
+            responses[q.id] = input.value;
+
+            if (q.type === 'mcq' && input.value == q.correctAnswer) {
+                score += Number(q.marks);
+            }
+        }
     });
-    await setDoc(doc(db, "responses", `${eid}_${auth.currentUser.uid}`), { examId: eid, studentId: auth.currentUser.uid, studentName: studentData.name, responses, autoScore: score, isForced: forced, warnings: cheatWarnings, submittedAt: serverTimestamp() });
+
+    await setDoc(
+  doc(db, "responses", `${eid}_${auth.currentUser.uid}`),
+  {
+    examId: eid,
+    studentId: auth.currentUser.uid,
+    studentName: studentData.name,
+    responses,
+    autoScore: score,
+    isForced: forced,
+    warnings: cheatWarnings,
+    durationAttempted: (exam.duration || 60),
+    submittedAt: serverTimestamp()
+  }
+);
+
+// ✅ AUTO PUBLISH (INSIDE FUNCTION)
+const isPureMCQ =
+    exam.type === "online" &&
+    exam.questions.every(q => q.type === "mcq");
+
+if (isPureMCQ) {
+
+    const breakdown = exam.questions.map(q => ({
+        questionId: q.id,
+        marks:
+          responses[q.id] == q.correctAnswer
+          ? Number(q.marks)
+          : 0
+    }));
+
+    await setDoc(
+      doc(db, "results_published", `${eid}_${auth.currentUser.uid}`),
+      {
+        examId: eid,
+        examTitle: exam.title,
+        studentId: auth.currentUser.uid,
+        studentName: studentData.name,
+        department: studentData.department,
+        obtainedMarks: score,
+        maxMarks: exam.totalMarks,
+        breakdown: breakdown,
+        publishedAt: serverTimestamp(),
+        autoPublished: true
+      }
+    );
+}
+
+alert("Exam submitted successfully!");
+location.reload();
+    alert("Exam submitted successfully!");
     location.reload();
 };
+
 
 async function loadReevaluationSubjects() {
 
@@ -634,6 +818,32 @@ if (logoLoaded) {
 
     doc.save(`${hall.seriesName}_Official_Hall_Ticket.pdf`);
 };
+function startTimer(eid) {
+
+    examTimerInterval = setInterval(() => {
+
+        remainingSeconds--;
+
+        const timerBox = document.getElementById("timerBox");
+
+        if (timerBox) {
+            timerBox.innerText = "Time Left: " + formatTime(remainingSeconds);
+        }
+
+        if (remainingSeconds <= 0) {
+            clearInterval(examTimerInterval);
+            alert("⏰ Time is up! Auto submitting your exam.");
+            submitResponses(eid, true);
+        }
+
+    }, 1000);
+}
+
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
 window.logoutUser = () => signOut(auth).then(() => window.location.href = "index.html");
 </script>
 

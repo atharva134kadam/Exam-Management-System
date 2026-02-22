@@ -434,73 +434,6 @@ async function loadDataForResultPublishing() {
 }
 
 
-/* ===== LOAD QUESTIONS & CREATE DROPDOWNS ===== */
-
-window.onExamChangeResults = function() {
-    const examId = document.getElementById('resExamSelect').value;
-    const container = document.getElementById('sectionMarksContainer');
-    container.innerHTML = "";
-
-    if(!examId) return;
-
-    const exam = allExams.find(e => e.id === examId);
-    document.getElementById('resTotalMarksDisplay').innerText = exam.totalMarks;
-
-    // ONLINE EXAM (QUESTION-WISE)
-    if(exam.questions && exam.questions.length > 0) {
-
-        exam.questions.forEach((q, index) => {
-
-            let optionsHTML = "";
-            for(let m = 0; m <= q.marks; m += 1) {
-                optionsHTML += `<option value="${m}">${m} Mark${m != 1 ? 's' : ''}</option>`;
-            }
-
-            container.innerHTML += `
-                <div class="q-mark-card animate-in">
-                    <div class="q-mark-header">
-                        <span class="q-index">Question ${index+1}</span>
-                        <span class="badge-blue">${q.marks} Max</span>
-                    </div>
-                    <p class="q-mark-text">${q.text}</p>
-                    <select class="q-mark-dropdown"
-                            data-qid="${q.id || index}"
-                            data-max="${q.marks}"
-                            onchange="updateLiveTotal()">
-                        ${optionsHTML}
-                    </select>
-                </div>
-            `;
-        });
-
-        // Live Total Display
-        container.innerHTML += `
-            <div class="card" style="border:2px solid var(--accent)">
-                <div class="flex-between">
-                    <span>Total Obtained:</span>
-                    <b id="liveTotalMarks" style="color:var(--accent); font-size:20px;">0</b>
-                </div>
-            </div>
-        `;
-
-    } 
-    // OFFLINE EXAM (TOTAL MARK ENTRY)
-    else {
-        container.innerHTML = `
-            <div class="card">
-                <label>Offline Exam Marks (Max: ${exam.totalMarks})</label>
-                <input type="number"
-                       id="offlineTotalMark"
-                       min="0"
-                       max="${exam.totalMarks}"
-                       oninput="validateOfflineMarks(${exam.totalMarks})"
-                       placeholder="Enter Marks Obtained">
-            </div>
-        `;
-    }
-
-    lucide.createIcons();
-};
 
 
 /* ===== LIVE TOTAL CALCULATION ===== */
@@ -529,48 +462,7 @@ window.validateOfflineMarks = function(max) {
 
 
 
-window.onExamChangeResults = function() {
-    const examId = document.getElementById('resExamSelect').value;
-    const container = document.getElementById('sectionMarksContainer');
-    container.innerHTML = "";
-    
-    if(!examId) return;
-    
-    const exam = allExams.find(e => e.id === examId);
-    document.getElementById('resTotalMarksDisplay').innerText = exam.totalMarks;
 
-    if(exam.questions && exam.questions.length > 0) {
-        exam.questions.forEach((q, index) => {
-            // Create options for dropdown from 0 to max marks
-            let optionsHTML = `<option value="0">0 Marks</option>`;
-            for(let m = 0.5; m <= q.marks; m += 0.5) {
-                optionsHTML += `<option value="${m}">${m} Mark${m > 1 ? 's' : ''}</option>`;
-            }
-
-            container.innerHTML += `
-                <div class="q-mark-card animate-in">
-                    <div class="q-mark-header">
-                        <span class="q-index">Question ${index+1}</span>
-                        <span class="badge-blue">${q.marks} Max Marks</span>
-                    </div>
-                    <p class="q-mark-text">${q.text}</p>
-                    <div class="mt-10">
-                        <label style="font-size:12px; color:var(--muted)">Assigned Marks:</label>
-                        <select class="q-mark-dropdown" data-qid="${q.id || index}" style="border: 2px solid var(--accent); font-weight:700; color:var(--accent);">
-                            ${optionsHTML}
-                        </select>
-                    </div>
-                </div>`;
-        });
-    } else {
-        container.innerHTML = `
-            <div class="card" style="border: 1px dashed var(--accent);">
-                <label>Offline Exam Total Marks (Max: ${exam.totalMarks})</label>
-                <input type="number" id="offlineTotalMark" placeholder="Enter Total Marks Obtained">
-            </div>`;
-    }
-    lucide.createIcons();
-};
 
 async function loadReevaluationRequests() {
 
@@ -764,9 +656,8 @@ window.calculateLiveTotal = function() {
 window.publishExamResult = async function() {
 
     const examId = document.getElementById("resExamSelect").value;
-    const questionCount = Number(document.getElementById("resQuestionCount").value);
 
-    if (!selectedStudent || !examId || !questionCount) {
+    if (!selectedStudent || !examId) {
         alert("Complete all fields & search valid UID");
         return;
     }
@@ -778,6 +669,11 @@ window.publishExamResult = async function() {
     let total = 0;
 
     const inputs = document.querySelectorAll(".individual-mark");
+
+    if (inputs.length === 0) {
+        alert("No marks entered.");
+        return;
+    }
 
     inputs.forEach((input, index) => {
         const mark = Number(input.value) || 0;
@@ -810,6 +706,7 @@ window.publishExamResult = async function() {
 
         alert(`Result Published Successfully!\n${selectedStudent.name} secured ${total}/${exam.totalMarks}`);
 
+        // reset
         document.getElementById("questionMarksContainer").innerHTML = "";
         document.getElementById("resQuestionCount").value = "";
         document.getElementById("resStudentUID").value = "";
@@ -824,6 +721,7 @@ window.publishExamResult = async function() {
         alert("Error publishing result");
     }
 };
+
 window.checkIfResultExists = async function() {
 
     const examId = document.getElementById("resExamSelect").value;
@@ -879,14 +777,6 @@ window.searchStudentByUID = async function() {
             prn: student.prn
         };
 
-        infoBox.innerHTML = `
-            <div class="card profile-accent">
-                <b>${student.name}</b><br>
-                PRN: ${student.prn}<br>
-                Dept: ${student.department}
-            </div>
-        `;
-
         // Enable subject dropdown
         examSelect.disabled = false;
         examSelect.innerHTML = '<option value="">-- Select Subject --</option>';
@@ -903,6 +793,77 @@ window.searchStudentByUID = async function() {
         console.error(error);
         alert("Error fetching student");
     }
+};
+window.onExamChangeResults = function() {
+
+    const examId = document.getElementById("resExamSelect").value;
+    const container = document.getElementById("questionMarksContainer");
+    const questionInput = document.getElementById("resQuestionCount");
+
+    container.innerHTML = "";
+    questionInput.value = "";
+
+    if (!examId) return;
+
+    const exam = allExams.find(e => e.id === examId);
+    if (!exam) return;
+
+    /* ===============================
+       🧠 ONLINE / MCQ EXAM (ADVANCED)
+    =============================== */
+    if (exam.type === "online" || exam.type === "mcq") {
+
+        questionInput.style.display = "none";
+
+        exam.questions.forEach((q, index) => {
+
+            let options = `<option value="0">0</option>`;
+
+            for (let m = 0.5; m <= q.marks; m += 0.5) {
+                options += `<option value="${m}">${m}</option>`;
+            }
+
+            container.innerHTML += `
+                <div class="q-mark-card">
+                    <div class="flex-between">
+                        <b>Question ${index + 1}</b>
+                        <span class="badge-blue">${q.marks} Max</span>
+                    </div>
+
+                    <p style="margin-top:8px">${q.text}</p>
+
+                    <select class="individual-mark"
+                            onchange="calculateLiveTotal()">
+                        ${options}
+                    </select>
+                </div>
+            `;
+        });
+    }
+
+    /* ===============================
+       📝 OFFLINE EXAM (KEEP OLD)
+    =============================== */
+    else {
+
+        questionInput.style.display = "block";
+
+        container.innerHTML = `
+            <div class="card" style="border:1px dashed var(--accent);">
+                Offline exam selected. Enter total questions and click Generate.
+            </div>
+        `;
+    }
+
+    /* ===== LIVE TOTAL DISPLAY ===== */
+    container.innerHTML += `
+        <div class="card" style="border:2px solid var(--accent); margin-top:15px;">
+            <div class="flex-between">
+                <span>Total Obtained:</span>
+                <b id="liveTotalDisplay" style="color:var(--accent); font-size:20px;">0</b>
+            </div>
+        </div>
+    `;
 };
 window.logoutUser = () => signOut(auth).then(() => location.href = "index.html");
 window.closeRecords = () => document.getElementById("recordViewerModal").style.display = "none";
@@ -1017,7 +978,11 @@ input, select, textarea { width: 100%; padding: 14px; margin-top: 10px; border-r
     <div id="onlineBuilderArea" class="builder-grid">
         <div class="card">
             <h4>Online Exam Setup</h4>
-            <input id="eTitle" placeholder="Exam Name"><input id="eDate" type="date">
+            <input id="eTitle" placeholder="Exam Name">
+<input id="eDate" type="date">
+
+<label class="mt-10">Test Duration (Minutes)</label>
+<input id="eDuration" type="number" min="1" placeholder="Enter Duration (e.g. 60)">
             <textarea id="qText" placeholder="Enter Question" rows="2" class="mt-20"></textarea>
             <div style="display:flex; gap:10px"><select id="qType" onchange="toggleQuestionType()"><option value="subjective">Subjective</option><option value="mcq">MCQ</option></select><input id="qMaxMarks" type="number" value="5"></div>
             <div id="mcqOptionsContainer" style="display:none">
@@ -1083,7 +1048,7 @@ input, select, textarea { width: 100%; padding: 14px; margin-top: 10px; border-r
         <div id="selectedStudentInfo" style="margin-top:15px;"></div>
 
         <label class="mt-20">Select Subject</label>
-        <select id="resExamSelect" disabled onchange="checkIfResultExists()">
+        <select id="resExamSelect" disabled onchange="onExamChangeResults(); checkIfResultExists();">
             <option value="">Search UID first</option>
         </select>
 
