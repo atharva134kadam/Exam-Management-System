@@ -36,11 +36,11 @@ let allExams = [];
 
 /* ================= AUTH & INITIALIZATION ================= */
 onAuthStateChanged(auth, async (user) => {
-  if (!user) return location.href = "login.html";
+  if (!user) return location.href = "index.html";
   facultyUID = user.uid;
   
   const facultyDoc = await getDoc(doc(db, "users", user.uid));
-  if (!facultyDoc.exists() || facultyDoc.data().role !== "faculty") return location.href = "login.html";
+  if (!facultyDoc.exists() || facultyDoc.data().role !== "faculty") return location.href = "index.html";
   
   const data = facultyDoc.data();
   facultyDept = data.department;
@@ -904,7 +904,7 @@ window.searchStudentByUID = async function() {
         alert("Error fetching student");
     }
 };
-window.logoutUser = () => signOut(auth).then(() => location.href = "login.html");
+window.logoutUser = () => signOut(auth).then(() => location.href = "index.html");
 window.closeRecords = () => document.getElementById("recordViewerModal").style.display = "none";
 </script>
 
