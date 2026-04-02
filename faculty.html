@@ -995,6 +995,89 @@ window.filterCurriculum = function() {
     card.style.display = (matchSearch && matchSem && matchType) ? "flex" : "none";
   });
 };
+
+/* ================= 9. ASSIGNMENTS ================= */
+window.publishAssignment = async function() {
+    const title = document.getElementById("asgnTitle").value.trim();
+    const subject = document.getElementById("asgnSubject").value.trim();
+    const deadline = document.getElementById("asgnDeadline").value;
+    const semester = document.getElementById("asgnSemester").value;
+    const link = document.getElementById("asgnLink").value.trim();
+
+    if (!title || !subject || !deadline || !link) {
+        return alert("Please fill all required fields.");
+    }
+
+    try {
+        console.log("Attempting to post assignment...");
+        await addDoc(collection(db, "assignments"), {
+            title, subject, deadline, semester, link,
+            department: facultyDept,
+            facultyId: facultyUID,
+            facultyName: document.querySelector(".u-name").innerText,
+            createdAt: serverTimestamp()
+        });
+
+        alert("Assignment Published Successfully!");
+        // Reset fields
+        document.getElementById("asgnTitle").value = "";
+        document.getElementById("asgnSubject").value = "";
+        document.getElementById("asgnLink").value = "";
+        
+        await loadAssignments();
+    } catch (err) {
+        console.error("Post Error:", err);
+        alert("Firebase Error: Check console for permissions.");
+    }
+};
+
+window.loadAssignments = async function() {
+    const container = document.getElementById("assignmentList");
+    if(!container) return;
+    container.innerHTML = `<div class="loader">Loading assignments...</div>`;
+
+    try {
+        const q = query(collection(db, "assignments"), where("department", "==", facultyDept));
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+            container.innerHTML = "<p class='empty-msg'>No assignments posted yet.</p>";
+            return;
+        }
+
+        container.innerHTML = "";
+        snap.forEach(docSnap => {
+            const a = docSnap.data();
+            const aid = docSnap.id;
+            container.innerHTML += `
+                <div class="card animate-in" style="border-left: 5px solid var(--accent)">
+                    <div class="flex-between">
+                        <div>
+                            <h4 class="m-0">${a.title}</h4>
+                            <div class="curr-meta">
+                                <span><i data-lucide="book" size="12"></i> ${a.subject}</span>
+                                <span><i data-lucide="calendar" size="12"></i> Due: ${a.deadline}</span>
+                                <span class="badge-blue">Sem ${a.semester}</span>
+                            </div>
+                        </div>
+                        <div class="curr-card-actions">
+                            <a href="${a.link}" target="_blank" class="curr-btn curr-btn-view">View</a>
+                            <button class="curr-btn curr-btn-del" onclick="deleteAssignment('${aid}')"><i data-lucide="trash-2" size="14"></i></button>
+                        </div>
+                    </div>
+                </div>`;
+        });
+        lucide.createIcons();
+    } catch (err) {
+        console.error("Load Error:", err);
+    }
+};
+
+window.deleteAssignment = async function(id) {
+    if(!confirm("Delete this?")) return;
+    await deleteDoc(doc(db, "assignments", id));
+    loadAssignments();
+};
 </script>
  
 <style>
