@@ -58,7 +58,6 @@ async function refreshDashboard() {
     await loadDashboardStats();
     await loadCreatedExams();
     await loadGrievances();
-    await loadStudents();
     await loadOfflineExamsForSlots();
     await loadSubjectsForHallTicket();
     await loadDataForResultPublishing();
@@ -69,13 +68,20 @@ async function refreshDashboard() {
 /* ================= NAVIGATION ================= */
 window.showSection = function(id) {
   document.querySelectorAll(".section-content").forEach(sec => sec.classList.remove("active"));
+  
   const target = document.getElementById(id);
   if(target) target.classList.add("active");
-  
+
   document.querySelectorAll(".tab-item").forEach(tab => {
       tab.classList.remove("active-tab");
       if(tab.getAttribute('onclick')?.includes(`'${id}'`)) tab.classList.add("active-tab");
   });
+
+  // 🔥 KEY LINE (THIS FIXES EVERYTHING)
+  if(id === "dashboard") {
+      loadStudents();
+  }
+
   lucide.createIcons();
 };
 
@@ -960,7 +966,6 @@ input, select, textarea { width: 100%; padding: 14px; margin-top: 10px; border-r
 
 <div class="tabs-container">
   <button class="tab-item" onclick="showSection('dashboard')"><i data-lucide="layout-dashboard"></i> Home</button>
-  <button class="tab-item" onclick="showSection('students')"><i data-lucide="users"></i> Students</button>
   <button class="tab-item" onclick="showSection('exams')"><i data-lucide="plus-circle"></i> Exam Management</button>
   <button class="tab-item" onclick="showSection('results')"><i data-lucide="award"></i> Results</button>
   <button class="tab-item" onclick="showSection('grievance')"><i data-lucide="alert-circle"></i> Grievance</button>
@@ -975,12 +980,27 @@ input, select, textarea { width: 100%; padding: 14px; margin-top: 10px; border-r
     <div id="examList"></div>
   </div>
 
-  <div id="students" class="section-content">
-    <div class="resp-grid">
-        <div><h3>Department Audit</h3><div id="studentsDirectory"></div></div>
-        <div id="studentDetailView"><div class="card" style="text-align:center; padding:50px; color:var(--muted)"><i data-lucide="user-search" size="40"></i><p>Select student to begin audit.</p></div></div>
+<div id="dashboard" class="section-content active">
+
+  <h3 class="m-0 mb-20">Student Management</h3>
+
+  <div class="resp-grid">
+    
+    <div>
+      <h3>Department Students</h3>
+      <div id="studentsDirectory"></div>
     </div>
+
+    <div id="studentDetailView">
+      <div class="card" style="text-align:center; padding:50px; color:var(--muted)">
+        <i data-lucide="user-search" size="40"></i>
+        <p>Select student to view details.</p>
+      </div>
+    </div>
+
   </div>
+
+</div>
 
   <div id="exams" class="section-content">
     <div class="builder-nav">
