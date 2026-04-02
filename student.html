@@ -872,13 +872,13 @@ async function loadDashboardData() {
     ]);
 }
 
-/* Inside your <script type="module"> */
-
+/* Corrected loadAssignments logic inside script module */
 async function loadAssignments() {
     const container = document.getElementById("assignmentList");
-    if (!studentData) return;
+    if (!studentData || !container) return;
 
     try {
+        // Query assignments for the student's specific department (e.g., "CSE")
         const q = query(
             collection(db, "assignments"), 
             where("department", "==", studentData.department)
@@ -898,8 +898,10 @@ async function loadAssignments() {
 
         container.innerHTML = "";
         
-        // Sort: Newest created first
-        const sortedDocs = snap.docs.sort((a, b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0));
+        // Manual Sort: Newest created first (based on the createdAt timestamp)
+        const sortedDocs = snap.docs.sort((a, b) => 
+            (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0)
+        );
 
         sortedDocs.forEach(docSnap => {
             const task = docSnap.data();
@@ -926,7 +928,7 @@ async function loadAssignments() {
                         </div>
                         <div style="margin-left: 20px;">
                             <a href="${task.link}" target="_blank" class="action-btn" style="text-decoration:none; display:inline-block; padding:10px 20px; font-size:13px;">
-                                View Task
+                                Open Task
                             </a>
                         </div>
                     </div>
@@ -936,7 +938,7 @@ async function loadAssignments() {
         lucide.createIcons();
     } catch (error) {
         console.error("Assignment Load Error:", error);
-        container.innerHTML = "<p class='text-muted'>Error loading assignments.</p>";
+        container.innerHTML = "<p class='text-muted'>Error connecting to assignments database.</p>";
     }
 }
 </script>
@@ -1100,19 +1102,19 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
   </div>
 
   <div id="assignments" class="section-content">
-    <div class="card">
-        <h3 style="margin:0 0 10px 0;">Academic Assignments</h3>
-        <p style="color:var(--muted); font-size:13px; margin-bottom:25px;">
-          View and access assignments posted by your department faculty.
-        </p>
-        <div id="assignmentList">
-            <div style="text-align:center; padding:40px; color:var(--muted)">
-                <div class="loader"></div>
-                <p>Loading your assignments...</p>
-            </div>
-        </div>
-    </div>
+  <div class="card">
+      <h3 style="margin:0 0 10px 0;">Academic Assignments</h3>
+      <p style="color:var(--muted); font-size:13px; margin-bottom:25px;">
+        View and access assignments posted by your department faculty.
+      </p>
+      <div id="assignmentList">
+          <div style="text-align:center; padding:40px; color:var(--muted)">
+              <div class="loader"></div>
+              <p>Fetching your assignments...</p>
+          </div>
+      </div>
   </div>
+</div>
 
   <div id="results" class="section-content">
     <div class="card">
