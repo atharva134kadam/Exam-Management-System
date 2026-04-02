@@ -52,17 +52,10 @@ onAuthStateChanged(auth, async (user) => {
 
   await refreshDashboard();
 
-setTimeout(async () => {
-  showSection('dashboard');
-  await loadStudents();   // 👈 ensures dept is set + DOM ready
-}, 300);
-});
-
 async function refreshDashboard() {
     await loadDashboardStats();
     await loadCreatedExams();
     await loadGrievances();
-    await loadStudents();
     await loadOfflineExamsForSlots();
     await loadSubjectsForHallTicket();
     await loadDataForResultPublishing();
