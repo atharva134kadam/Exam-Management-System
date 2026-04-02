@@ -11,8 +11,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, updateDoc, setDoc, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, updateDoc, setDoc, deleteDoc, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
  
 const firebaseConfig = {
   apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
@@ -27,7 +26,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app);
  
 let facultyUID = "";
 let facultyDept = "";
@@ -52,6 +50,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("u-dept-sub").innerText = facultyDept + " Faculty";
   document.getElementById("u-initials").innerText = data.name.split(' ').map(n => n[0]).join('').toUpperCase();
   document.getElementById("facultyEmail").innerText = user.email;
+  document.getElementById("currDeptNote").innerHTML = `Materials added here are visible only to <b>${facultyDept}</b> department students.`;
  
   await refreshDashboard();
   await showSection('dashboard');
@@ -765,14 +764,9 @@ window.uploadAnswerSheet = async function(event, requestId) {
   try {
     const file = event.target.files[0];
     if (!file) return;
-    const storageRef = ref(storage, `reevaluation_sheets/${requestId}.pdf`);
-    await uploadBytes(storageRef, file);
-    const downloadURL = await getDownloadURL(storageRef);
-    await updateDoc(doc(db, "reevaluation_requests", requestId), { answerSheetURL: downloadURL });
-    alert("Upload successful!");
+    alert("File storage is not configured. Use the link field or contact admin.");
   } catch (error) {
     console.error("Upload error:", error);
-    alert("Upload failed. Check console.");
   }
 };
  
@@ -791,229 +785,214 @@ window.closeRecords = () => document.getElementById("recordViewerModal").style.d
  
 /* ================= 8. CURRICULUM ================= */
 /*
-  Firestore collection: "curriculum"
-  Document fields:
-    - title         : string
-    - subject       : string
-    - semester      : string
-    - description   : string
-    - fileURL       : string  (download URL from Storage)
-    - fileName      : string
-    - fileType      : string  (mime type)
-    - department    : string  (faculty's dept — students query by this)
-    - uploadedBy    : string  (facultyUID)
-    - uploadedByName: string
-    - uploadedAt    : timestamp
-    - tags          : array of strings
+  Firestore Collection: "curriculum"
+  ─────────────────────────────────────────────────
+  Fields per document:
+    title         : string   — display name of the material
+    subject       : string   — subject name
+    semester      : string   — "1" to "8"
+    description   : string   — optional notes
+    tags          : string[] — searchable keywords
+    resourceType  : string   — "link" | "youtube" | "gdrive" | "other"
+    resourceLink  : string   — full URL provided by faculty
+    department    : string   — faculty dept; students filter by this
+    uploadedBy    : string   — facultyUID
+    uploadedByName: string   — faculty display name
+    createdAt     : timestamp
  
-  Storage path: curriculum/{department}/{timestamp}_{filename}
- 
-  Security model:
-    - Faculty can only upload for their own department (enforced in code + should mirror in Firestore rules)
-    - Students query WHERE department == their dept, so they only see their own dept's content
+  Department isolation:
+    Faculty writes with their own department value.
+    Students query WHERE department == student.department.
+    This ensures strict dept-level visibility without Storage.
 */
  
 let curriculumItems = [];
-let curriculumUploadInProgress = false;
  
-async function loadCurriculum() {
+window.loadCurriculum = async function() {
   const container = document.getElementById("curriculumList");
   container.innerHTML = `<div class="loader">Loading curriculum...</div>`;
  
-  const q = query(
-    collection(db, "curriculum"),
-    where("department", "==", facultyDept)
-  );
-  const snap = await getDocs(q);
-  curriculumItems = [];
-  container.innerHTML = "";
+  try {
+    const q = query(
+      collection(db, "curriculum"),
+      where("department", "==", facultyDept)
+    );
+    const snap = await getDocs(q);
+    curriculumItems = [];
  
-  if (snap.empty) {
-    container.innerHTML = "<p class='empty-msg'>No curriculum uploaded yet. Add your first material above.</p>";
-    return;
-  }
+    if (snap.empty) {
+      container.innerHTML = "<p class='empty-msg'>No materials added yet. Add your first resource above.</p>";
+      return;
+    }
  
-  snap.forEach(docSnap => {
-    const c = docSnap.data();
-    c.id = docSnap.id;
-    curriculumItems.push(c);
-  });
+    snap.forEach(docSnap => {
+      const c = docSnap.data();
+      c.id = docSnap.id;
+      curriculumItems.push(c);
+    });
  
-  // Sort by uploadedAt desc
-  curriculumItems.sort((a, b) => (b.uploadedAt?.seconds || 0) - (a.uploadedAt?.seconds || 0));
+    // Sort newest first
+    curriculumItems.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
  
-  curriculumItems.forEach(c => {
-    const icon = getCurriculumIcon(c.fileType);
-    const tagHTML = (c.tags || []).map(t => `<span class="curr-tag">${t}</span>`).join("");
-    const date = c.uploadedAt?.toDate ? c.uploadedAt.toDate().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : "--";
+    container.innerHTML = "";
+    curriculumItems.forEach(c => {
+      const iconInfo = getCurriculumIcon(c.resourceType);
+      const tagHTML  = (c.tags || []).map(t => `<span class="curr-tag">${t}</span>`).join("");
+      const date     = c.createdAt?.toDate
+        ? c.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : "--";
  
-    container.innerHTML += `
-      <div class="curr-card animate-in" id="curr-${c.id}">
-        <div class="curr-card-left">
-          <div class="curr-icon-box ${icon.cls}">${icon.svg}</div>
-        </div>
-        <div class="curr-card-body">
-          <div class="curr-card-header">
-            <div>
-              <h4 class="m-0">${c.title}</h4>
-              <div class="curr-meta">
-                <span><i data-lucide="book-open" size="12"></i> ${c.subject}</span>
-                <span><i data-lucide="layers" size="12"></i> Sem ${c.semester}</span>
-                <span><i data-lucide="calendar" size="12"></i> ${date}</span>
-                <span><i data-lucide="user" size="12"></i> ${c.uploadedByName || "Faculty"}</span>
-              </div>
-            </div>
-            <div class="curr-card-actions">
-              <a href="${c.fileURL}" target="_blank" class="curr-btn curr-btn-view">
-                <i data-lucide="eye" size="14"></i> View
-              </a>
-              <a href="${c.fileURL}" download="${c.fileName}" class="curr-btn curr-btn-dl">
-                <i data-lucide="download" size="14"></i>
-              </a>
-              <button class="curr-btn curr-btn-del" onclick="deleteCurriculumItem('${c.id}', '${c.storagePath || ''}')">
-                <i data-lucide="trash-2" size="14"></i>
-              </button>
+      container.innerHTML += `
+        <div class="curr-card animate-in" id="curr-${c.id}">
+          <div class="curr-card-left">
+            <div class="curr-icon-box ${iconInfo.cls}">
+              <i data-lucide="${iconInfo.icon}" size="22"></i>
             </div>
           </div>
-          ${c.description ? `<p class="curr-desc">${c.description}</p>` : ""}
-          <div class="curr-tags">${tagHTML}</div>
-        </div>
-      </div>`;
-  });
-  lucide.createIcons();
+          <div class="curr-card-body">
+            <div class="curr-card-header">
+              <div style="min-width:0; flex:1;">
+                <h4 class="m-0" style="word-break:break-word;">${c.title}</h4>
+                <div class="curr-meta">
+                  <span><i data-lucide="book-open" size="12"></i> ${c.subject}</span>
+                  <span><i data-lucide="layers" size="12"></i> Sem ${c.semester}</span>
+                  <span><i data-lucide="calendar" size="12"></i> ${date}</span>
+                  <span><i data-lucide="user" size="12"></i> ${c.uploadedByName || "Faculty"}</span>
+                  <span class="curr-type-badge">${c.resourceType || "link"}</span>
+                </div>
+              </div>
+              <div class="curr-card-actions">
+                <a href="${c.resourceLink}" target="_blank" rel="noopener noreferrer" class="curr-btn curr-btn-view">
+                  <i data-lucide="external-link" size="14"></i> Open
+                </a>
+                <button class="curr-btn curr-btn-del" onclick="deleteCurriculumItem('${c.id}')">
+                  <i data-lucide="trash-2" size="14"></i>
+                </button>
+              </div>
+            </div>
+            ${c.description ? `<p class="curr-desc">${c.description}</p>` : ""}
+            <div class="curr-tags">${tagHTML}</div>
+          </div>
+        </div>`;
+    });
+    lucide.createIcons();
+ 
+  } catch (err) {
+    console.error("Curriculum load error:", err);
+    container.innerHTML = "<p class='empty-msg' style='color:var(--red)'>Failed to load curriculum. Check console.</p>";
+  }
+};
+ 
+function getCurriculumIcon(type) {
+  switch ((type || "").toLowerCase()) {
+    case "youtube": return { cls: "ci-vid",   icon: "youtube" };
+    case "gdrive":  return { cls: "ci-sheet", icon: "hard-drive" };
+    case "other":   return { cls: "ci-default",icon: "globe" };
+    default:        return { cls: "ci-pdf",   icon: "link" };
+  }
 }
  
-function getCurriculumIcon(fileType) {
-  if (!fileType) return { cls: "ci-default", svg: `<i data-lucide="file" size="22"></i>` };
-  if (fileType.includes("pdf"))        return { cls: "ci-pdf",   svg: `<i data-lucide="file-text" size="22"></i>` };
-  if (fileType.includes("word") || fileType.includes("document")) return { cls: "ci-word", svg: `<i data-lucide="file-type-2" size="22"></i>` };
-  if (fileType.includes("sheet") || fileType.includes("excel"))   return { cls: "ci-sheet", svg: `<i data-lucide="table-2" size="22"></i>` };
-  if (fileType.includes("presentation") || fileType.includes("powerpoint")) return { cls: "ci-ppt", svg: `<i data-lucide="presentation" size="22"></i>` };
-  if (fileType.includes("image"))      return { cls: "ci-img",   svg: `<i data-lucide="image" size="22"></i>` };
-  if (fileType.includes("video"))      return { cls: "ci-vid",   svg: `<i data-lucide="video" size="22"></i>` };
-  if (fileType.includes("zip") || fileType.includes("rar")) return { cls: "ci-zip", svg: `<i data-lucide="archive" size="22"></i>` };
-  return { cls: "ci-default", svg: `<i data-lucide="file" size="22"></i>` };
-}
- 
-window.uploadCurriculum = async function() {
-  if (curriculumUploadInProgress) return;
- 
-  const title       = document.getElementById("currTitle").value.trim();
-  const subject     = document.getElementById("currSubject").value.trim();
-  const semester    = document.getElementById("currSemester").value;
-  const description = document.getElementById("currDesc").value.trim();
-  const tagsRaw     = document.getElementById("currTags").value.trim();
-  const fileInput   = document.getElementById("currFile");
-  const file        = fileInput.files[0];
+window.addCurriculumMaterial = async function() {
+  const title        = document.getElementById("currTitle").value.trim();
+  const subject      = document.getElementById("currSubject").value.trim();
+  const semester     = document.getElementById("currSemester").value;
+  const description  = document.getElementById("currDesc").value.trim();
+  const tagsRaw      = document.getElementById("currTags").value.trim();
+  const resourceType = document.getElementById("currResourceType").value;
+  const resourceLink = document.getElementById("currLink").value.trim();
  
   if (!title || !subject || !semester) {
     alert("Please fill in Title, Subject and Semester.");
     return;
   }
-  if (!file) {
-    alert("Please select a file to upload.");
+  if (!resourceLink) {
+    alert("Please enter a resource link.");
+    return;
+  }
+  // Basic URL validation
+  try { new URL(resourceLink); } catch {
+    alert("Please enter a valid URL (must start with https://).");
     return;
   }
  
   const tags = tagsRaw ? tagsRaw.split(",").map(t => t.trim()).filter(Boolean) : [];
+  const facultyName = document.querySelector(".u-name")?.innerText || "Faculty";
  
-  // Progress UI
-  curriculumUploadInProgress = true;
-  const btn = document.getElementById("currUploadBtn");
-  const bar = document.getElementById("currProgressWrap");
+  const btn = document.getElementById("currAddBtn");
   btn.disabled = true;
-  btn.innerText = "Uploading...";
-  bar.style.display = "block";
+  btn.innerText = "Adding...";
  
   try {
-    const timestamp = Date.now();
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const storagePath = `curriculum/${facultyDept}/${timestamp}_${safeName}`;
-    const storageRef = ref(storage, storagePath);
- 
-    await uploadBytes(storageRef, file);
-    const fileURL = await getDownloadURL(storageRef);
- 
-    // Get faculty name from DOM
-    const facultyName = document.querySelector(".u-name")?.innerText || "Faculty";
- 
     await addDoc(collection(db, "curriculum"), {
       title,
       subject,
       semester,
       description,
       tags,
-      fileURL,
-      fileName: file.name,
-      fileType: file.type,
-      storagePath,
-      department: facultyDept,
-      uploadedBy: facultyUID,
-      uploadedByName: facultyName,
-      uploadedAt: serverTimestamp()
+      resourceType,
+      resourceLink,
+      department:      facultyDept,
+      uploadedBy:      facultyUID,
+      uploadedByName:  facultyName,
+      createdAt:       serverTimestamp()
     });
  
     // Reset form
-    document.getElementById("currTitle").value = "";
-    document.getElementById("currSubject").value = "";
-    document.getElementById("currSemester").value = "";
-    document.getElementById("currDesc").value = "";
-    document.getElementById("currTags").value = "";
-    fileInput.value = "";
-    document.getElementById("currFileLabel").innerText = "Click to choose file or drag & drop";
+    document.getElementById("currTitle").value       = "";
+    document.getElementById("currSubject").value     = "";
+    document.getElementById("currSemester").value    = "";
+    document.getElementById("currDesc").value        = "";
+    document.getElementById("currTags").value        = "";
+    document.getElementById("currResourceType").value = "link";
+    document.getElementById("currLink").value        = "";
  
-    alert("Curriculum material uploaded successfully!");
     await loadCurriculum();
  
   } catch (err) {
-    console.error("Curriculum upload error:", err);
-    alert("Upload failed. Check console.");
+    console.error("Curriculum add error:", err);
+    alert("Failed to add material. Check console.");
   } finally {
-    curriculumUploadInProgress = false;
     btn.disabled = false;
-    btn.innerText = "Upload Material";
-    bar.style.display = "none";
+    btn.innerText = "Add Material";
   }
 };
  
-window.deleteCurriculumItem = async function(docId, storagePath) {
-  if (!confirm("Delete this curriculum material? This cannot be undone.")) return;
+window.deleteCurriculumItem = async function(docId) {
+  if (!confirm("Delete this material? This cannot be undone.")) return;
   try {
-    await updateDoc(doc(db, "curriculum", docId), { deleted: true }); // soft-delete flag; hard delete below
-    // Actually hard-delete the Firestore doc
-    const { deleteDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     await deleteDoc(doc(db, "curriculum", docId));
     document.getElementById(`curr-${docId}`)?.remove();
-    const remaining = document.querySelectorAll(".curr-card").length;
-    if (remaining === 0) {
-      document.getElementById("curriculumList").innerHTML = "<p class='empty-msg'>No curriculum uploaded yet.</p>";
+    if (document.querySelectorAll(".curr-card").length === 0) {
+      document.getElementById("curriculumList").innerHTML =
+        "<p class='empty-msg'>No materials added yet.</p>";
     }
   } catch (err) {
-    console.error(err);
-    alert("Delete failed.");
+    console.error("Delete error:", err);
+    alert("Delete failed. Check console.");
   }
 };
  
 window.filterCurriculum = function() {
-  const search = document.getElementById("currSearch").value.toLowerCase();
+  const search    = document.getElementById("currSearch").value.toLowerCase();
   const semFilter = document.getElementById("currSemFilter").value;
+  const typeFilter = document.getElementById("currTypeFilter").value;
+ 
   document.querySelectorAll(".curr-card").forEach(card => {
-    const id = card.id.replace("curr-", "");
+    const id   = card.id.replace("curr-", "");
     const item = curriculumItems.find(c => c.id === id);
     if (!item) return;
+ 
     const matchSearch = !search ||
       item.title.toLowerCase().includes(search) ||
       item.subject.toLowerCase().includes(search) ||
       (item.description || "").toLowerCase().includes(search) ||
       (item.tags || []).some(t => t.toLowerCase().includes(search));
-    const matchSem = !semFilter || item.semester === semFilter;
-    card.style.display = (matchSearch && matchSem) ? "flex" : "none";
-  });
-};
  
-window.updateCurrFileLabel = function(input) {
-  const label = document.getElementById("currFileLabel");
-  label.innerText = input.files[0] ? input.files[0].name : "Click to choose file or drag & drop";
+    const matchSem  = !semFilter  || item.semester === semFilter;
+    const matchType = !typeFilter || item.resourceType === typeFilter;
+ 
+    card.style.display = (matchSearch && matchSem && matchType) ? "flex" : "none";
+  });
 };
 </script>
  
@@ -1334,12 +1313,22 @@ input, select, textarea {
 .curr-upload-box {
   border: 2px dashed var(--border);
   border-radius: 20px;
-  padding: 30px;
+  padding: 28px 30px;
   background: #fafbfc;
   margin-bottom: 25px;
   transition: border-color 0.2s;
 }
 .curr-upload-box:focus-within { border-color: var(--accent); }
+ 
+.curr-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0;
+}
  
 .curr-form-grid {
   display: grid;
@@ -1348,56 +1337,13 @@ input, select, textarea {
 }
 .curr-form-grid .full { grid-column: 1 / -1; }
  
-.curr-file-drop {
-  border: 2px dashed #cbd5e1;
-  border-radius: 16px;
-  padding: 28px 20px;
-  text-align: center;
-  cursor: pointer;
-  transition: 0.2s;
-  background: white;
-  margin-top: 10px;
-  position: relative;
-}
-.curr-file-drop:hover { border-color: var(--accent); background: #eff6ff; }
-.curr-file-drop input[type="file"] {
-  position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0; padding: 0;
-}
-#currFileLabel { font-size: 13px; color: var(--muted); margin-top: 6px; display: block; font-weight: 500; }
- 
-.curr-progress-wrap {
-  display: none;
-  margin-top: 12px;
-  background: var(--border);
-  border-radius: 8px;
-  height: 6px;
-  overflow: hidden;
-}
-.curr-progress-bar {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 8px;
-  animation: progressPulse 1.5s ease-in-out infinite;
-  width: 100%;
-}
-@keyframes progressPulse {
-  0%   { opacity: 1; }
-  50%  { opacity: 0.4; }
-  100% { opacity: 1; }
-}
- 
 /* Filter bar */
 .curr-filter-bar {
   display: flex;
   gap: 12px;
   margin-bottom: 20px;
   flex-wrap: wrap;
-}
-.curr-filter-bar input,
-.curr-filter-bar select {
-  margin-top: 0;
-  flex: 1;
-  min-width: 140px;
+  align-items: center;
 }
  
 /* Curriculum cards */
@@ -1412,30 +1358,46 @@ input, select, textarea {
   transition: all 0.2s;
   align-items: flex-start;
 }
-.curr-card:hover { border-color: var(--accent); box-shadow: 0 8px 24px rgba(37,99,235,0.07); transform: translateY(-2px); }
+.curr-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(37,99,235,0.07);
+  transform: translateY(-2px);
+}
  
 .curr-card-left { flex-shrink: 0; }
 .curr-icon-box {
   width: 52px; height: 52px; border-radius: 16px;
   display: flex; align-items: center; justify-content: center;
 }
-.ci-pdf    { background: #fee2e2; color: #dc2626; }
-.ci-word   { background: #dbeafe; color: #2563eb; }
-.ci-sheet  { background: #dcfce7; color: #16a34a; }
-.ci-ppt    { background: #ffedd5; color: #ea580c; }
-.ci-img    { background: #fae8ff; color: #9333ea; }
-.ci-vid    { background: #fef9c3; color: #ca8a04; }
-.ci-zip    { background: #f1f5f9; color: #64748b; }
-.ci-default{ background: #f1f5f9; color: #64748b; }
+.ci-pdf     { background: #eff6ff; color: var(--accent); }
+.ci-vid     { background: #fee2e2; color: #dc2626; }
+.ci-sheet   { background: #dcfce7; color: #16a34a; }
+.ci-default { background: #f1f5f9; color: #64748b; }
  
 .curr-card-body { flex: 1; min-width: 0; }
-.curr-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 15px; flex-wrap: wrap; }
+.curr-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .curr-meta {
-  display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap;
-  font-size: 12px; color: var(--muted); font-weight: 500;
+  display: flex; gap: 12px; margin-top: 6px;
+  flex-wrap: wrap; font-size: 12px;
+  color: var(--muted); font-weight: 500;
 }
 .curr-meta span { display: flex; align-items: center; gap: 4px; }
-.curr-desc { font-size: 13px; color: var(--muted); margin: 10px 0 8px 0; line-height: 1.5; }
+.curr-type-badge {
+  background: #f1f5f9; color: var(--muted);
+  font-size: 10px; padding: 2px 8px;
+  border-radius: 6px; font-weight: 700;
+  text-transform: uppercase;
+}
+.curr-desc {
+  font-size: 13px; color: var(--muted);
+  margin: 10px 0 8px 0; line-height: 1.5;
+}
  
 .curr-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .curr-tag {
@@ -1452,8 +1414,6 @@ input, select, textarea {
 }
 .curr-btn-view { background: #eff6ff; color: var(--accent); }
 .curr-btn-view:hover { background: var(--accent); color: white; }
-.curr-btn-dl { background: #f0fdf4; color: var(--green); padding: 7px 10px; }
-.curr-btn-dl:hover { background: var(--green); color: white; }
 .curr-btn-del { background: #fff1f2; color: var(--red); padding: 7px 10px; }
 .curr-btn-del:hover { background: var(--red); color: white; }
 </style>
@@ -1683,29 +1643,31 @@ input, select, textarea {
   <!-- ========== CURRICULUM ========== -->
   <div id="curriculum" class="section-content">
  
-    <h3 style="margin-top:0; margin-bottom:4px;">Curriculum Manager</h3>
-    <p style="color:var(--muted); font-size:13px; margin:0 0 24px 0;">
-      Materials uploaded here are visible only to <b>${facultyDept}</b> department students.
-    </p>
+    <div style="margin-bottom:24px;">
+      <h3 style="margin:0 0 4px 0;">Curriculum Manager</h3>
+      <p style="color:var(--muted); font-size:13px; margin:0;" id="currDeptNote">
+        Materials added here are visible only to students in your department.
+      </p>
+    </div>
  
-    <!-- Upload Form -->
+    <!-- Add Material Form -->
     <div class="curr-upload-box">
       <h4 style="margin:0 0 20px 0; display:flex; align-items:center; gap:10px;">
-        <span style="background:var(--accent); color:white; border-radius:10px; padding:6px 12px; font-size:13px;">+ Upload</span>
-        Add New Material
+        <span style="background:var(--accent); color:white; border-radius:10px; padding:5px 12px; font-size:13px;">+ New</span>
+        Add Resource Material
       </h4>
  
       <div class="curr-form-grid">
         <div>
-          <label style="font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">Title *</label>
+          <label class="curr-label">Title *</label>
           <input id="currTitle" placeholder="e.g. Data Structures Notes Unit 3">
         </div>
         <div>
-          <label style="font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">Subject *</label>
+          <label class="curr-label">Subject *</label>
           <input id="currSubject" placeholder="e.g. Data Structures">
         </div>
         <div>
-          <label style="font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">Semester *</label>
+          <label class="curr-label">Semester *</label>
           <select id="currSemester">
             <option value="">-- Select Semester --</option>
             <option value="1">Semester 1</option>
@@ -1719,48 +1681,55 @@ input, select, textarea {
           </select>
         </div>
         <div>
-          <label style="font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">Tags <span style="font-weight:400;">(comma separated)</span></label>
+          <label class="curr-label">Resource Type *</label>
+          <select id="currResourceType">
+            <option value="link">General Link</option>
+            <option value="youtube">YouTube Video</option>
+            <option value="gdrive">Google Drive</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="full">
+          <label class="curr-label">Resource URL *</label>
+          <input id="currLink" type="url" placeholder="https://drive.google.com/... or https://youtu.be/...">
+        </div>
+        <div>
+          <label class="curr-label">Tags <span style="font-weight:400; text-transform:none;">(comma separated)</span></label>
           <input id="currTags" placeholder="e.g. notes, unit-3, important">
         </div>
-        <div class="full">
-          <label style="font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">Description <span style="font-weight:400;">(optional)</span></label>
-          <textarea id="currDesc" rows="2" placeholder="Brief description of this material..."></textarea>
-        </div>
-        <div class="full">
-          <label style="font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">File *</label>
-          <div class="curr-file-drop">
-            <input type="file" id="currFile" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.mp4,.zip,.rar" onchange="updateCurrFileLabel(this)">
-            <i data-lucide="upload-cloud" size="28" style="color:var(--accent);"></i>
-            <span id="currFileLabel">Click to choose file or drag &amp; drop</span>
-            <small style="display:block; margin-top:4px; color:#94a3b8;">PDF, Word, PPT, Excel, Images, Video, ZIP</small>
-          </div>
-          <div class="curr-progress-wrap" id="currProgressWrap">
-            <div class="curr-progress-bar"></div>
-          </div>
+        <div>
+          <label class="curr-label">Description <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+          <input id="currDesc" placeholder="Brief description of this material">
         </div>
       </div>
  
-      <button class="action-btn mt-20" id="currUploadBtn"
-              style="padding: 14px 32px; font-size:15px;"
-              onclick="uploadCurriculum()">
-        <i data-lucide="upload" size="16" style="vertical-align:middle; margin-right:6px;"></i>
-        Upload Material
+      <button class="action-btn mt-20" id="currAddBtn"
+              style="padding:14px 32px; font-size:15px;"
+              onclick="addCurriculumMaterial()">
+        Add Material
       </button>
     </div>
  
     <!-- Filter Bar -->
     <div class="curr-filter-bar">
-      <input id="currSearch" placeholder="🔍  Search by title, subject, tag..." oninput="filterCurriculum()">
-      <select id="currSemFilter" onchange="filterCurriculum()" style="max-width:180px;">
+      <input id="currSearch" placeholder="🔍  Search title, subject, tag..." oninput="filterCurriculum()" style="margin-top:0;">
+      <select id="currSemFilter" onchange="filterCurriculum()" style="max-width:170px; margin-top:0;">
         <option value="">All Semesters</option>
-        <option value="1">Semester 1</option>
-        <option value="2">Semester 2</option>
-        <option value="3">Semester 3</option>
-        <option value="4">Semester 4</option>
-        <option value="5">Semester 5</option>
-        <option value="6">Semester 6</option>
-        <option value="7">Semester 7</option>
-        <option value="8">Semester 8</option>
+        <option value="1">Sem 1</option>
+        <option value="2">Sem 2</option>
+        <option value="3">Sem 3</option>
+        <option value="4">Sem 4</option>
+        <option value="5">Sem 5</option>
+        <option value="6">Sem 6</option>
+        <option value="7">Sem 7</option>
+        <option value="8">Sem 8</option>
+      </select>
+      <select id="currTypeFilter" onchange="filterCurriculum()" style="max-width:160px; margin-top:0;">
+        <option value="">All Types</option>
+        <option value="link">General Link</option>
+        <option value="youtube">YouTube</option>
+        <option value="gdrive">Google Drive</option>
+        <option value="other">Other</option>
       </select>
     </div>
  
@@ -1768,7 +1737,7 @@ input, select, textarea {
     <div id="curriculumList">
       <div style="text-align:center; padding:50px; color:var(--muted);">
         <i data-lucide="book-open" size="36"></i>
-        <p>Click the Curriculum tab to load materials.</p>
+        <p>Switch to this tab to load materials.</p>
       </div>
     </div>
  
@@ -1790,3 +1759,4 @@ input, select, textarea {
 <script>lucide.createIcons();</script>
 </body>
 </html>
+ 
