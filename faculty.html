@@ -52,6 +52,7 @@ onAuthStateChanged(auth, async (user) => {
 
   await refreshDashboard();
   showSection('dashboard'); 
+  loadStudents(); 
 });
 
 async function refreshDashboard() {
