@@ -341,7 +341,332 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
 /* ====== LOADER ====== */
 .loader { border: 3px solid var(--bg); border-top: 3px solid var(--accent); border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
 @keyframes spin { to { transform: rotate(360deg); } }
- 
+
+/* ====== TIMETABLE STYLES ====== */
+.tt-tab-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  background: var(--white);
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+.tt-tab {
+  flex: 1;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.tt-tab:hover { background: var(--bg); color: var(--text); }
+.tt-tab.active { background: var(--accent); color: white; box-shadow: 0 4px 12px rgba(37,99,235,0.3); }
+
+.tt-view { display: none; }
+.tt-view.active { display: block; animation: fadeUp 0.3s ease; }
+
+/* Today's hero banner */
+.tt-today-hero {
+  background: linear-gradient(135deg, #0d1117 0%, #1e3a5f 100%);
+  border-radius: 20px;
+  padding: 28px 32px;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.tt-today-hero::before {
+  content: '';
+  position: absolute;
+  right: -40px; top: -40px;
+  width: 180px; height: 180px;
+  border-radius: 50%;
+  background: rgba(37,99,235,0.15);
+}
+.tt-today-hero::after {
+  content: '';
+  position: absolute;
+  right: 80px; bottom: -60px;
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  background: rgba(37,99,235,0.08);
+}
+.tt-today-label {
+  color: #60a5fa;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  position: relative; z-index: 1;
+  margin-bottom: 6px;
+}
+.tt-today-day {
+  color: white;
+  font-size: 22px;
+  font-weight: 900;
+  position: relative; z-index: 1;
+  margin-bottom: 4px;
+}
+.tt-today-date {
+  color: rgba(255,255,255,0.45);
+  font-size: 13px;
+  font-family: 'DM Mono', monospace;
+  position: relative; z-index: 1;
+}
+.tt-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(34,197,94,0.15);
+  border: 1px solid rgba(34,197,94,0.3);
+  color: #4ade80;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 100px;
+  margin-left: 10px;
+}
+.tt-live-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+  animation: pulse-green 1.5s infinite;
+}
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* Upcoming next lecture card */
+.tt-next-card {
+  background: var(--accent);
+  border-radius: 18px;
+  padding: 22px 24px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.tt-next-card::before {
+  content: '';
+  position: absolute;
+  right: -20px; top: -20px;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+}
+.tt-next-icon {
+  width: 52px; height: 52px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.15);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  color: white;
+}
+.tt-next-info { flex: 1; position: relative; z-index: 1; }
+.tt-next-label { color: rgba(255,255,255,0.65); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.tt-next-subject { color: white; font-size: 20px; font-weight: 900; line-height: 1.1; }
+.tt-next-meta { color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 600; margin-top: 5px; }
+.tt-next-time {
+  background: rgba(255,255,255,0.15);
+  color: white;
+  border-radius: 12px;
+  padding: 10px 18px;
+  text-align: center;
+  flex-shrink: 0;
+  position: relative; z-index: 1;
+}
+.tt-next-time-val { font-size: 20px; font-weight: 900; line-height: 1; }
+.tt-next-time-sub { font-size: 10px; font-weight: 700; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
+
+/* Lecture slots for today */
+.tt-slot-row {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  margin-bottom: 10px;
+  position: relative;
+}
+.tt-slot-time-col {
+  width: 72px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 18px;
+}
+.tt-slot-time-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  white-space: nowrap;
+}
+.tt-slot-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--white);
+  margin: 6px 0;
+  flex-shrink: 0;
+  z-index: 1;
+  transition: all 0.3s;
+}
+.tt-slot-dot.active-dot {
+  background: var(--green);
+  border-color: var(--green);
+  box-shadow: 0 0 0 4px rgba(34,197,94,0.2);
+}
+.tt-slot-dot.past-dot {
+  background: var(--muted);
+  border-color: var(--muted);
+}
+.tt-slot-line {
+  width: 2px;
+  flex: 1;
+  background: var(--border);
+  margin: 0 auto;
+}
+
+.tt-slot-card {
+  flex: 1;
+  border-radius: 16px;
+  padding: 18px 20px;
+  border: 1.5px solid var(--border);
+  background: white;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.tt-slot-card:hover { border-color: #93c5fd; transform: translateX(3px); }
+.tt-slot-card.tt-active-slot {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.1);
+}
+.tt-slot-card.tt-past-slot {
+  opacity: 0.55;
+  background: #f8fafc;
+}
+.tt-slot-color-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: 16px 0 0 16px;
+}
+.tt-slot-subject { font-weight: 800; font-size: 16px; color: var(--primary); margin-bottom: 4px; }
+.tt-slot-faculty { font-size: 12px; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 5px; }
+.tt-type-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 3px 9px;
+  border-radius: 100px;
+  margin-left: 8px;
+}
+.tt-no-class {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--muted);
+}
+
+/* Weekly grid view */
+.tt-week-grid {
+  overflow-x: auto;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+.tt-week-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 700px;
+}
+.tt-week-table th {
+  background: var(--primary);
+  color: white;
+  padding: 14px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  border: none;
+}
+.tt-week-table th:first-child {
+  text-align: left;
+  width: 80px;
+  color: rgba(255,255,255,0.5);
+  font-size: 10px;
+}
+.tt-week-table th.today-col {
+  background: var(--accent);
+  position: relative;
+}
+.tt-week-table td {
+  padding: 10px 8px;
+  border: 1px solid var(--bg);
+  vertical-align: top;
+  background: white;
+  min-height: 60px;
+}
+.tt-week-table td:first-child {
+  background: var(--bg);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.tt-week-cell {
+  border-radius: 10px;
+  padding: 9px 11px;
+  border-left: 3px solid transparent;
+  min-height: 52px;
+  transition: all 0.2s;
+  cursor: default;
+}
+.tt-week-cell:hover { filter: brightness(0.95); }
+.tt-week-cell-subject { font-weight: 800; font-size: 13px; color: var(--primary); }
+.tt-week-cell-faculty { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.tt-week-cell-type { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+/* Live clock */
+.tt-clock {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main-wrap { margin-left: 0; }
+  .chart-grid { grid-template-columns: 1fr; }
+  .att-subject-row, .att-header { grid-template-columns: 1fr 60px 60px 60px 90px; }
+  .page-body { padding: 20px 16px; }
+  .entry-grid-2, .entry-grid-3 { grid-template-columns: 1fr; }
+  .export-actions { flex-direction: column; }
+  .leave-type-grid { grid-template-columns: 1fr 1fr; }
+  .leave-calendar-grid { gap: 2px; }
+  .tt-slot-time-col { width: 54px; }
+}
+
 /* ====== PORTFOLIO STYLES ====== */
 .portfolio-tab-bar {
   display: flex;
@@ -695,20 +1020,6 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
   border-radius: 8px;
   margin: 3px 4px 3px 0;
 }
- 
-/* ====== RESPONSIVE ====== */
-@media (max-width: 768px) {
-  .sidebar { transform: translateX(-100%); }
-  .sidebar.open { transform: translateX(0); }
-  .main-wrap { margin-left: 0; }
-  .chart-grid { grid-template-columns: 1fr; }
-  .att-subject-row, .att-header { grid-template-columns: 1fr 60px 60px 60px 90px; }
-  .page-body { padding: 20px 16px; }
-  .entry-grid-2, .entry-grid-3 { grid-template-columns: 1fr; }
-  .export-actions { flex-direction: column; }
-  .leave-type-grid { grid-template-columns: 1fr 1fr; }
-  .leave-calendar-grid { gap: 2px; }
-}
 </style>
 </head>
 <body>
@@ -730,6 +1041,9 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
     <div class="nav-group-label">Main</div>
     <button class="nav-item active" onclick="showSection('profile', this)">
       <i data-lucide="user" size="17"></i> My Profile
+    </button>
+    <button class="nav-item" onclick="showSection('timetable', this)">
+      <i data-lucide="clock" size="17"></i> Timetable
     </button>
     <button class="nav-item" onclick="showSection('exams', this)">
       <i data-lucide="calendar" size="17"></i> Examinations
@@ -772,12 +1086,13 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
   <header class="topbar">
     <div class="topbar-title" id="topbarTitle">My Profile</div>
     <div class="topbar-right">
+      <div class="tt-clock" id="liveClock"><i data-lucide="clock" size="14"></i> --:-- --</div>
       <span style="font-size:12px; color:var(--muted); font-weight:600;" id="topbarSub">--</span>
     </div>
   </header>
  
   <div class="page-body">
- 
+
     <!-- ========== PROFILE SECTION ========== -->
     <div id="profile" class="section-content active">
       <div class="profile-hero">
@@ -825,6 +1140,37 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
         </div>
       </div>
     </div>
+
+    <!-- ========== TIMETABLE SECTION ========== -->
+    <div id="timetable" class="section-content">
+
+      <!-- Tab bar -->
+      <div class="tt-tab-bar">
+        <button class="tt-tab active" id="tttab-today" onclick="switchTimetableTab('today')">
+          <i data-lucide="sun" size="15"></i> Today
+        </button>
+        <button class="tt-tab" id="tttab-week" onclick="switchTimetableTab('week')">
+          <i data-lucide="layout-grid" size="15"></i> Full Week
+        </button>
+      </div>
+
+      <!-- TODAY VIEW -->
+      <div class="tt-view active" id="ttview-today">
+        <div id="ttTodayHero"></div>
+        <div id="ttNextCard"></div>
+        <div id="ttTodaySlots">
+          <div class="empty-state"><div class="loader"></div><p>Loading timetable...</p></div>
+        </div>
+      </div>
+
+      <!-- WEEK VIEW -->
+      <div class="tt-view" id="ttview-week">
+        <div id="ttWeekGrid">
+          <div class="empty-state"><div class="loader"></div><p>Loading weekly schedule...</p></div>
+        </div>
+      </div>
+
+    </div><!-- /timetable -->
  
     <!-- ========== EXAMS SECTION ========== -->
     <div id="exams" class="section-content">
@@ -1110,8 +1456,6 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
  
     <!-- ========== LEAVE MANAGEMENT SECTION ========== -->
     <div id="leaves" class="section-content">
- 
-      <!-- Stats Row -->
       <div class="leave-stats-row" id="leaveStatsRow">
         <div class="stat-card">
           <div class="stat-label">Total Leaves</div>
@@ -1135,7 +1479,6 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
         </div>
       </div>
  
-      <!-- Tab Bar -->
       <div class="leave-tab-bar">
         <button class="leave-tab active" id="ltab-apply" onclick="switchLeaveTab('apply')">
           <i data-lucide="plus-circle" size="15"></i> Apply Leave
@@ -1151,13 +1494,10 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
         </button>
       </div>
  
-      <!-- ===== APPLY LEAVE VIEW ===== -->
       <div class="leave-view active" id="lview-apply">
         <div class="card">
           <div class="card-title"><i data-lucide="send" size="16"></i> Submit Leave Application</div>
           <div class="card-sub">Fill in the details below. Your HOD / Class Teacher will review and respond within 2 working days.</div>
- 
-          <!-- Leave Type Picker -->
           <label class="form-label" style="margin-bottom:12px;">Select Leave Type</label>
           <div class="leave-type-grid" id="leaveTypeGrid">
             <div class="leave-type-card selected" data-type="Medical" onclick="selectLeaveType(this, 'Medical')">
@@ -1197,9 +1537,7 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
               <span class="lt-badge">Oth</span>
             </div>
           </div>
- 
           <input type="hidden" id="selectedLeaveType" value="Medical">
- 
           <div class="entry-grid-2" style="margin-top:6px;">
             <div>
               <label class="form-label">From Date</label>
@@ -1210,21 +1548,16 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
               <input type="date" id="leaveToDate">
             </div>
           </div>
- 
           <div id="leaveDurationDisplay" style="display:none; margin-bottom:14px; background:var(--accent-soft); border-radius:10px; padding:10px 14px; font-size:13px; font-weight:700; color:var(--accent);">
             <i data-lucide="info" size="13" style="display:inline; margin-right:4px;"></i>
             <span id="leaveDurationText">0 days selected</span>
           </div>
- 
           <label class="form-label">Subject / Subjects to be Missed</label>
           <input type="text" id="leaveSubjects" placeholder="e.g. Data Structures, Operating Systems">
- 
           <label class="form-label">Reason for Leave</label>
-          <textarea id="leaveReason" rows="4" placeholder="Describe your reason clearly. For medical leave, mention the nature of illness. For events, mention the name and organiser..."></textarea>
- 
+          <textarea id="leaveReason" rows="4" placeholder="Describe your reason clearly..."></textarea>
           <label class="form-label">Supporting Document / Link (Optional)</label>
-          <input type="url" id="leaveDocLink" placeholder="e.g. Link to medical certificate, event letter (Google Drive, etc.)">
- 
+          <input type="url" id="leaveDocLink" placeholder="e.g. Link to medical certificate (Google Drive, etc.)">
           <div style="display:flex; align-items:center; gap:12px; margin-top:4px; flex-wrap:wrap;">
             <button class="btn-primary" onclick="submitLeaveApplication()" id="leaveSubmitBtn">
               <i data-lucide="send" size="15"></i> Submit Application
@@ -1236,7 +1569,6 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
         </div>
       </div>
  
-      <!-- ===== HISTORY VIEW ===== -->
       <div class="leave-view" id="lview-history">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
           <div>
@@ -1267,7 +1599,6 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
         </div>
       </div>
  
-      <!-- ===== CALENDAR VIEW ===== -->
       <div class="leave-view" id="lview-calendar">
         <div class="card">
           <div class="card-title"><i data-lucide="calendar-days" size="16"></i> Leave Calendar</div>
@@ -1304,19 +1635,16 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
         </div>
       </div>
  
-      <!-- ===== POLICY VIEW ===== -->
       <div class="leave-view" id="lview-policy">
         <div class="card">
           <div class="card-title"><i data-lucide="book-open" size="16"></i> Leave Policy & Guidelines</div>
           <div class="card-sub">Official leave rules as per your department and university norms.</div>
- 
           <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:24px;">
             <span class="leave-policy-tag"><i data-lucide="calendar" size="12"></i> Semester-based</span>
             <span class="leave-policy-tag"><i data-lucide="shield-check" size="12"></i> HOD Approval Required</span>
             <span class="leave-policy-tag"><i data-lucide="alert-triangle" size="12"></i> Max 10 Med / 5 Personal</span>
             <span class="leave-policy-tag"><i data-lucide="file-text" size="12"></i> Document Required for Medical</span>
           </div>
- 
           <div style="border:1px solid var(--border); border-radius:16px; overflow:hidden; margin-bottom:20px;">
             <div style="background:var(--primary); padding:16px 20px;">
               <div style="color:white; font-weight:800; font-size:14px;">Leave Entitlement Table</div>
@@ -1325,25 +1653,20 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Leave Type</th>
-                    <th>Max Days/Sem</th>
-                    <th>Carryover</th>
-                    <th>Document Required</th>
-                    <th>Approval Authority</th>
+                    <th>Leave Type</th><th>Max Days/Sem</th><th>Carryover</th><th>Document Required</th><th>Approval Authority</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr><td><b>Medical Leave</b></td><td>10 days</td><td>No</td><td>Yes — Medical Certificate</td><td>Class Teacher / HOD</td></tr>
                   <tr><td><b>Personal Leave</b></td><td>5 days</td><td>No</td><td>No (Self-declaration)</td><td>Class Teacher</td></tr>
                   <tr><td><b>Family Emergency</b></td><td>7 days</td><td>No</td><td>Recommended</td><td>HOD</td></tr>
-                  <tr><td><b>Event / Competition</b></td><td>As approved</td><td>No</td><td>Yes — Event Letter / Certificate</td><td>HOD + Principal</td></tr>
+                  <tr><td><b>Event / Competition</b></td><td>As approved</td><td>No</td><td>Yes — Event Letter</td><td>HOD + Principal</td></tr>
                   <tr><td><b>Academic Leave</b></td><td>As approved</td><td>No</td><td>Yes — Institution Letter</td><td>HOD</td></tr>
                   <tr><td><b>Other</b></td><td>Subject to HOD</td><td>No</td><td>Case-by-case</td><td>HOD</td></tr>
                 </tbody>
               </table>
             </div>
           </div>
- 
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
             <div style="background:var(--bg); border-radius:14px; padding:18px; border:1px solid var(--border);">
               <div style="font-weight:800; font-size:13px; margin-bottom:8px; color:var(--primary);">📋 Application Rules</div>
@@ -1368,7 +1691,6 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
           </div>
         </div>
       </div>
- 
     </div><!-- /leaves -->
  
     <!-- ========== GRIEVANCE SECTION ========== -->
@@ -1442,7 +1764,11 @@ const MAX_WARNINGS = 3;
 let examTimerInterval = null;
 let remainingSeconds = 0;
 let portfolioSkills = [];
- 
+
+// ====== Timetable state ======
+let timetableData = null;
+let ttClockInterval = null;
+
 // ====== Leave Management State ======
 let selectedLeaveType = "Medical";
 let allLeaveApplications = [];
@@ -1459,6 +1785,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     studentData = studentDoc.data();
     updateUI();
+    startLiveClock();
     await loadDashboardData();
     await loadPortfolioData();
   } catch (err) {
@@ -1466,6 +1793,22 @@ onAuthStateChanged(auth, async (user) => {
   }
   lucide.createIcons();
 });
+
+// ====== LIVE CLOCK ======
+function startLiveClock() {
+  const updateClock = () => {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes().toString().padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    const el = document.getElementById("liveClock");
+    if (el) el.innerHTML = `<i data-lucide="clock" size="14"></i> ${h12}:${m} ${ampm}`;
+    lucide.createIcons();
+  };
+  updateClock();
+  ttClockInterval = setInterval(updateClock, 30000);
+}
  
 // ====== UPDATE UI ======
 function updateUI() {
@@ -1506,13 +1849,321 @@ async function loadDashboardData() {
       loadReevaluationHistory(),
       loadHallTicket(),
       loadAssignments(),
-      loadLeaveData()
+      loadLeaveData(),
+      loadTimetable()
     ]);
   } catch (err) {
     console.error("Dashboard load error:", err);
   }
 }
- 
+
+// ================================================================
+// ========== TIMETABLE FUNCTIONS =================================
+// ================================================================
+
+async function loadTimetable() {
+  if (!studentData) return;
+  try {
+    // Query timetables matching this student's department
+    const q = query(
+      collection(db, "timetables"),
+      where("department", "==", studentData.department),
+      where("semester", "==", String(studentData.semester || "4"))
+    );
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+      // Try without semester filter as fallback
+      const q2 = query(collection(db, "timetables"), where("department", "==", studentData.department));
+      const snap2 = await getDocs(q2);
+      if (!snap2.empty) {
+        timetableData = snap2.docs[0].data();
+      }
+    } else {
+      timetableData = snap.docs[0].data();
+    }
+
+    renderTimetableToday();
+    renderTimetableWeek();
+  } catch (err) {
+    console.error("Timetable load error:", err);
+    const todaySlots = document.getElementById("ttTodaySlots");
+    if (todaySlots) todaySlots.innerHTML = `<div class="empty-state"><p>Could not load timetable. Please try again.</p></div>`;
+  }
+}
+
+// Get today's day name
+function getTodayDayName() {
+  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  return days[new Date().getDay()];
+}
+
+// Parse hour from slot key like "Monday_9:00" -> 9
+function parseSlotHour(slotKey) {
+  const parts = slotKey.split("_");
+  if (parts.length < 2) return -1;
+  const timePart = parts[1]; // "9:00" or "10:00"
+  return parseInt(timePart.split(":")[0]);
+}
+
+// Get current hour (24h)
+function getCurrentHour() {
+  return new Date().getHours();
+}
+
+// Get type chip HTML
+function typeChipHTML(type, color) {
+  const configs = {
+    "Theory":   { bg: "rgba(37,99,235,0.1)",  color: "#1d4ed8" },
+    "Tutorial": { bg: "rgba(219,39,119,0.1)", color: "#be185d" },
+    "Lab":      { bg: "rgba(5,150,105,0.1)",  color: "#047857" },
+  };
+  const cfg = configs[type] || { bg: "rgba(100,116,139,0.1)", color: "#475569" };
+  return `<span class="tt-type-chip" style="background:${cfg.bg};color:${cfg.color};">${type}</span>`;
+}
+
+// Render today's timetable
+function renderTimetableToday() {
+  const heroEl    = document.getElementById("ttTodayHero");
+  const nextEl    = document.getElementById("ttNextCard");
+  const slotsEl   = document.getElementById("ttTodaySlots");
+  if (!heroEl || !slotsEl) return;
+
+  const today = getTodayDayName();
+  const now   = new Date();
+  const currentHour = now.getHours();
+
+  // Format date nicely
+  const dateStr = now.toLocaleDateString("en-IN", { weekday:"long", day:"2-digit", month:"long", year:"numeric" });
+
+  // Hero
+  heroEl.innerHTML = `
+    <div class="tt-today-hero">
+      <div class="tt-today-label">Today's Schedule</div>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div class="tt-today-day">${today}</div>
+        <span class="tt-live-badge"><span class="tt-live-dot"></span>Live</span>
+      </div>
+      <div class="tt-today-date">${dateStr}</div>
+    </div>`;
+
+  if (!timetableData || !timetableData.slots) {
+    slotsEl.innerHTML = `<div class="empty-state"><i data-lucide="calendar-x" size="40"></i><p>No timetable found for your department.</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  // Collect today's slots
+  const slots = timetableData.slots;
+  const todaySlots = Object.entries(slots)
+    .filter(([key]) => key.startsWith(today + "_"))
+    .map(([key, val]) => ({ key, hour: parseSlotHour(key), ...val }))
+    .sort((a, b) => a.hour - b.hour);
+
+  if (todaySlots.length === 0) {
+    nextEl.innerHTML = "";
+    slotsEl.innerHTML = `
+      <div class="tt-no-class">
+        <div style="font-size:48px;margin-bottom:12px;">🎉</div>
+        <div style="font-weight:800;font-size:16px;color:var(--primary);margin-bottom:6px;">No classes today!</div>
+        <div style="font-size:13px;color:var(--muted);">Enjoy your free day. Check the Weekly tab for upcoming lectures.</div>
+      </div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  // Find current and next slot
+  // College hours: slot at hour X runs from X:00 to (X+1):00 (1 hr). Lab slots are 2h but adjacent.
+  let currentSlot = null;
+  let nextSlot = null;
+
+  for (const slot of todaySlots) {
+    if (slot.hour === currentHour) { currentSlot = slot; }
+    else if (slot.hour > currentHour && !nextSlot) { nextSlot = slot; }
+  }
+
+  // Next card
+  if (nextSlot) {
+    const minsTill = (nextSlot.hour - currentHour) * 60 - now.getMinutes();
+    const displayTime = nextSlot.hour > 12
+      ? `${nextSlot.hour - 12}:00 PM`
+      : (nextSlot.hour === 12 ? "12:00 PM" : `${nextSlot.hour}:00 AM`);
+    const countdownText = minsTill < 60
+      ? `in ${minsTill} min`
+      : `in ${Math.floor(minsTill/60)}h ${minsTill%60}m`;
+    nextEl.innerHTML = `
+      <div class="tt-next-card">
+        <div class="tt-next-icon"><i data-lucide="bell" size="22"></i></div>
+        <div class="tt-next-info">
+          <div class="tt-next-label">Up Next — ${countdownText}</div>
+          <div class="tt-next-subject">${nextSlot.subjectName} ${typeChipHTML(nextSlot.type, nextSlot.color)}</div>
+          <div class="tt-next-meta"><i data-lucide="user" size="12" style="display:inline;margin-right:4px;"></i>${nextSlot.facultyName}</div>
+        </div>
+        <div class="tt-next-time">
+          <div class="tt-next-time-val">${displayTime}</div>
+          <div class="tt-next-time-sub">Starts</div>
+        </div>
+      </div>`;
+  } else if (currentSlot) {
+    nextEl.innerHTML = `
+      <div class="tt-next-card" style="background:var(--green);">
+        <div class="tt-next-icon"><i data-lucide="radio" size="22"></i></div>
+        <div class="tt-next-info">
+          <div class="tt-next-label">Now In Progress</div>
+          <div class="tt-next-subject">${currentSlot.subjectName} ${typeChipHTML(currentSlot.type, currentSlot.color)}</div>
+          <div class="tt-next-meta"><i data-lucide="user" size="12" style="display:inline;margin-right:4px;"></i>${currentSlot.facultyName}</div>
+        </div>
+        <div class="tt-next-time" style="background:rgba(255,255,255,0.2);">
+          <div class="tt-next-time-val" style="font-size:14px;">Live Now</div>
+          <div class="tt-next-time-sub">Ongoing</div>
+        </div>
+      </div>`;
+  } else {
+    // All classes done for today
+    const lastSlot = todaySlots[todaySlots.length - 1];
+    nextEl.innerHTML = `
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:16px;padding:18px 22px;display:flex;align-items:center;gap:14px;margin-bottom:20px;">
+        <div style="font-size:28px;">✅</div>
+        <div>
+          <div style="font-weight:800;color:#166534;font-size:14px;">All Done for Today!</div>
+          <div style="font-size:13px;color:#15803d;margin-top:3px;">Last lecture was ${lastSlot.subjectName} at ${lastSlot.hour > 12 ? lastSlot.hour-12 : lastSlot.hour}:00 ${lastSlot.hour >= 12 ? 'PM' : 'AM'}</div>
+        </div>
+      </div>`;
+  }
+
+  // Render slot rows with timeline
+  let html = "";
+  todaySlots.forEach((slot, idx) => {
+    const isPast = slot.hour < currentHour;
+    const isActive = slot.hour === currentHour;
+    const isFuture = slot.hour > currentHour;
+    const displayHour = slot.hour > 12 ? slot.hour - 12 : (slot.hour === 0 ? 12 : slot.hour);
+    const ampm = slot.hour >= 12 ? "PM" : "AM";
+    const timeStr = `${displayHour}:00`;
+    const dotClass = isActive ? "active-dot" : (isPast ? "past-dot" : "");
+    const cardClass = isActive ? "tt-active-slot" : (isPast ? "tt-past-slot" : "");
+    const isLast = idx === todaySlots.length - 1;
+
+    html += `
+      <div class="tt-slot-row">
+        <div class="tt-slot-time-col">
+          <div class="tt-slot-time-label">${timeStr}<br><span style="font-size:10px;">${ampm}</span></div>
+          <div class="tt-slot-dot ${dotClass}"></div>
+          ${!isLast ? `<div class="tt-slot-line"></div>` : ""}
+        </div>
+        <div class="tt-slot-card ${cardClass}" style="margin-bottom:${isLast?'0':''};">
+          <div class="tt-slot-color-bar" style="background:${slot.color || '#2563eb'};"></div>
+          <div style="padding-left:8px;">
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
+              <div class="tt-slot-subject">${slot.subjectName}</div>
+              ${typeChipHTML(slot.type, slot.color)}
+              ${isActive ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#166534;font-size:10px;font-weight:800;padding:3px 9px;border-radius:100px;"><span class="tt-live-dot" style="width:5px;height:5px;"></span>Now</span>` : ""}
+              ${isPast ? `<span style="background:#f1f5f9;color:#94a3b8;font-size:10px;font-weight:700;padding:3px 9px;border-radius:100px;">Done</span>` : ""}
+            </div>
+            <div class="tt-slot-faculty">
+              <i data-lucide="user" size="12"></i> ${slot.facultyName}
+            </div>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  slotsEl.innerHTML = html;
+  lucide.createIcons();
+}
+
+// Render weekly timetable grid
+function renderTimetableWeek() {
+  const container = document.getElementById("ttWeekGrid");
+  if (!container) return;
+
+  if (!timetableData || !timetableData.slots) {
+    container.innerHTML = `<div class="empty-state"><i data-lucide="calendar-x" size="40"></i><p>No timetable data available.</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  const workDays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const today = getTodayDayName();
+  const slots = timetableData.slots;
+
+  // Collect all unique hours
+  const allHours = new Set();
+  Object.keys(slots).forEach(key => {
+    const h = parseSlotHour(key);
+    if (h >= 0) allHours.add(h);
+  });
+  const sortedHours = [...allHours].sort((a, b) => a - b);
+
+  // Build table
+  let thead = `<thead><tr><th>Time</th>`;
+  workDays.forEach(day => {
+    const isToday = day === today;
+    thead += `<th class="${isToday ? 'today-col' : ''}">${day.substring(0,3).toUpperCase()}${isToday ? ' 📍' : ''}</th>`;
+  });
+  thead += `</tr></thead>`;
+
+  let tbody = `<tbody>`;
+  sortedHours.forEach(hour => {
+    const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+    const ampm = hour >= 12 ? "PM" : "AM";
+    const timeLabel = `${displayHour}:00 ${ampm}`;
+
+    tbody += `<tr><td>${timeLabel}</td>`;
+    workDays.forEach(day => {
+      const key = `${day}_${hour}:00`;
+      const slot = slots[key];
+      if (slot) {
+        const lightColor = slot.color + "18"; // very faint bg
+        tbody += `<td>
+          <div class="tt-week-cell" style="background:${lightColor};border-left-color:${slot.color};">
+            <div class="tt-week-cell-subject">${slot.subjectName}</div>
+            <div class="tt-week-cell-faculty">${slot.facultyName}</div>
+            <div class="tt-week-cell-type" style="color:${slot.color};">${slot.type}</div>
+          </div>
+        </td>`;
+      } else {
+        tbody += `<td></td>`;
+      }
+    });
+    tbody += `</tr>`;
+  });
+  tbody += `</tbody>`;
+
+  container.innerHTML = `
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:800;font-size:16px;color:var(--primary);">${timetableData.name || 'Class Timetable'}</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:3px;">${timetableData.department} · Semester ${timetableData.semester}</div>
+    </div>
+    <div class="tt-week-grid">
+      <table class="tt-week-table">
+        ${thead}
+        ${tbody}
+      </table>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);">
+        <div style="width:12px;height:12px;background:#dbeafe;border-radius:3px;border-left:3px solid #2563eb;"></div> Theory
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);">
+        <div style="width:12px;height:12px;background:#fce7f3;border-radius:3px;border-left:3px solid #db2777;"></div> Tutorial
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);">
+        <div style="width:12px;height:12px;background:#d1fae5;border-radius:3px;border-left:3px solid #059669;"></div> Lab
+      </div>
+    </div>`;
+  lucide.createIcons();
+}
+
+// Switch timetable tab
+window.switchTimetableTab = function(tab) {
+  document.querySelectorAll(".tt-tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".tt-view").forEach(v => v.classList.remove("active"));
+  document.getElementById("tttab-" + tab).classList.add("active");
+  document.getElementById("ttview-" + tab).classList.add("active");
+  lucide.createIcons();
+};
+
 // ====== NAVIGATION ======
 window.showSection = function(id, el = null) {
   document.querySelectorAll(".section-content").forEach(s => s.classList.remove("active"));
@@ -1520,11 +2171,16 @@ window.showSection = function(id, el = null) {
   document.querySelectorAll(".nav-item").forEach(t => t.classList.remove("active"));
   if (el) el.classList.add("active");
   const titles = {
-    profile: "My Profile", exams: "Examinations", assignments: "Assignments",
-    results: "Results", attendance: "Attendance", portfolio: "Portfolio",
-    leaves: "Leave Management", grievance: "Help Desk", reevaluation: "Re-Evaluation"
+    profile: "My Profile", timetable: "Timetable", exams: "Examinations",
+    assignments: "Assignments", results: "Results", attendance: "Attendance",
+    portfolio: "Portfolio", leaves: "Leave Management", grievance: "Help Desk",
+    reevaluation: "Re-Evaluation"
   };
   document.getElementById("topbarTitle").innerText = titles[id] || id;
+  // Re-render timetable today view when navigating to it (so clock/now is fresh)
+  if (id === "timetable") {
+    renderTimetableToday();
+  }
   lucide.createIcons();
 };
  
@@ -1543,7 +2199,6 @@ window.switchPortfolioTab = function(tab) {
 // ========== LEAVE MANAGEMENT FUNCTIONS =========================
 // ================================================================
  
-// Switch leave tab
 window.switchLeaveTab = function(tab) {
   document.querySelectorAll(".leave-tab").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(".leave-view").forEach(v => v.classList.remove("active"));
@@ -1554,7 +2209,6 @@ window.switchLeaveTab = function(tab) {
   lucide.createIcons();
 };
  
-// Select leave type card
 window.selectLeaveType = function(el, type) {
   document.querySelectorAll(".leave-type-card").forEach(c => {
     c.classList.remove("selected");
@@ -1566,12 +2220,10 @@ window.selectLeaveType = function(el, type) {
   document.getElementById("selectedLeaveType").value = type;
 };
  
-// Calculate leave duration on date change
 function setupLeaveDateListeners() {
   const fromEl = document.getElementById("leaveFromDate");
   const toEl = document.getElementById("leaveToDate");
   if (!fromEl || !toEl) return;
- 
   const update = () => {
     const from = new Date(fromEl.value);
     const to = new Date(toEl.value);
@@ -1590,7 +2242,6 @@ function setupLeaveDateListeners() {
   toEl.addEventListener("change", update);
 }
  
-// Load all leave data for this student
 async function loadLeaveData() {
   if (!auth.currentUser || !studentData) return;
   try {
@@ -1607,74 +2258,49 @@ async function loadLeaveData() {
   }
 }
  
-// Update leave stat cards
 function updateLeaveStats() {
   const total = allLeaveApplications.length;
   const approved = allLeaveApplications.filter(l => l.status === "Approved").length;
   const pending = allLeaveApplications.filter(l => l.status === "Pending").length;
   const rejected = allLeaveApplications.filter(l => l.status === "Rejected").length;
- 
   const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
-  setEl("lv-total", total);
-  setEl("lv-approved", approved);
-  setEl("lv-pending", pending);
-  setEl("lv-rejected", rejected);
+  setEl("lv-total", total); setEl("lv-approved", approved);
+  setEl("lv-pending", pending); setEl("lv-rejected", rejected);
 }
  
-// Submit leave application
 window.submitLeaveApplication = async function() {
   if (!auth.currentUser || !studentData) return;
- 
   const fromDate = document.getElementById("leaveFromDate").value;
   const toDate = document.getElementById("leaveToDate").value;
   const reason = document.getElementById("leaveReason").value.trim();
   const subjects = document.getElementById("leaveSubjects").value.trim();
   const docLink = document.getElementById("leaveDocLink").value.trim();
- 
   if (!fromDate) return alert("Please select a From Date.");
   if (!toDate) return alert("Please select a To Date.");
   if (new Date(toDate) < new Date(fromDate)) return alert("To Date cannot be before From Date.");
   if (!reason) return alert("Please provide a reason for the leave.");
- 
   const btn = document.getElementById("leaveSubmitBtn");
   btn.disabled = true;
   btn.innerHTML = `<i data-lucide="loader" size="15"></i> Submitting...`;
   lucide.createIcons();
- 
   try {
     const days = Math.round((new Date(toDate) - new Date(fromDate)) / (1000 * 60 * 60 * 24)) + 1;
     const payload = {
-      studentId: auth.currentUser.uid,
-      studentName: studentData.name.trim(),
-      prn: studentData.prn,
-      department: studentData.department,
-      batch: studentData.batch,
-      leaveType: selectedLeaveType,
-      fromDate,
-      toDate,
-      days,
-      subjects: subjects || "Not specified",
-      reason,
-      documentLink: docLink || "",
-      status: "Pending",
-      facultyNote: "",
-      reviewedBy: "",
-      reviewedAt: null,
+      studentId: auth.currentUser.uid, studentName: studentData.name.trim(),
+      prn: studentData.prn, department: studentData.department, batch: studentData.batch,
+      leaveType: selectedLeaveType, fromDate, toDate, days,
+      subjects: subjects || "Not specified", reason, documentLink: docLink || "",
+      status: "Pending", facultyNote: "", reviewedBy: "", reviewedAt: null,
       appliedAt: serverTimestamp()
     };
- 
     const ref = await addDoc(collection(db, "leave_applications"), payload);
- 
-    // Add to local state
     allLeaveApplications.push({ id: ref.id, ...payload, appliedAt: { toDate: () => new Date() } });
     updateLeaveStats();
     resetLeaveForm();
- 
     btn.disabled = false;
     btn.innerHTML = `<i data-lucide="send" size="15"></i> Submit Application`;
     lucide.createIcons();
- 
-    alert("Leave application submitted successfully! You will be notified once reviewed.");
+    alert("Leave application submitted successfully!");
   } catch (err) {
     console.error("Leave submit error:", err);
     btn.disabled = false;
@@ -1684,7 +2310,6 @@ window.submitLeaveApplication = async function() {
   }
 };
  
-// Reset leave form
 window.resetLeaveForm = function() {
   document.getElementById("leaveFromDate").value = "";
   document.getElementById("leaveToDate").value = "";
@@ -1694,41 +2319,31 @@ window.resetLeaveForm = function() {
   document.getElementById("leaveDurationDisplay").style.display = "none";
   document.querySelectorAll(".leave-type-card").forEach(c => c.classList.remove("selected"));
   const firstCard = document.querySelector(".leave-type-card[data-type='Medical']");
-  if (firstCard) {
-    firstCard.classList.add("selected");
-    selectedLeaveType = "Medical";
-  }
+  if (firstCard) { firstCard.classList.add("selected"); selectedLeaveType = "Medical"; }
 };
  
-// Render leave history list
 function renderLeaveHistory(leaves) {
   const container = document.getElementById("leaveHistoryList");
   if (!container) return;
- 
   if (leaves.length === 0) {
     container.innerHTML = `<div class="empty-state"><i data-lucide="calendar-off" size="40"></i><p>No leave applications found.</p></div>`;
-    lucide.createIcons();
-    return;
+    lucide.createIcons(); return;
   }
- 
   const sorted = [...leaves].sort((a, b) => {
     const tA = a.appliedAt?.seconds || (a.appliedAt?.toDate ? a.appliedAt.toDate().getTime() / 1000 : 0);
     const tB = b.appliedAt?.seconds || (b.appliedAt?.toDate ? b.appliedAt.toDate().getTime() / 1000 : 0);
     return tB - tA;
   });
- 
   const statusConfig = {
     "Pending":   { bg: "#fef3c7", color: "#92400e" },
     "Approved":  { bg: "#dcfce7", color: "#166534" },
     "Rejected":  { bg: "#fee2e2", color: "#991b1b" },
     "Cancelled": { bg: "#f1f5f9", color: "#475569" }
   };
- 
   const typeIcons = {
     "Medical": "stethoscope", "Personal": "user", "Family Emergency": "heart",
     "Event/Competition": "trophy", "Academic": "book", "Other": "more-horizontal"
   };
- 
   container.innerHTML = sorted.map(leave => {
     const sc = statusConfig[leave.status] || statusConfig["Pending"];
     const icon = typeIcons[leave.leaveType] || "calendar-off";
@@ -1736,19 +2351,14 @@ function renderLeaveHistory(leaves) {
     const toFmt   = new Date(leave.toDate + "T00:00:00").toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" });
     const appliedOn = leave.appliedAt?.toDate ? leave.appliedAt.toDate().toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }) : "—";
     const canCancel = leave.status === "Pending";
- 
     const facultyNoteHTML = leave.facultyNote
-      ? `<div class="lhi-faculty-note"><strong><i data-lucide="message-circle" size="12" style="display:inline;margin-right:4px;"></i>${leave.reviewedBy || "Faculty"}</strong>: ${leave.facultyNote}</div>`
-      : "";
- 
+      ? `<div class="lhi-faculty-note"><strong>${leave.reviewedBy || "Faculty"}</strong>: ${leave.facultyNote}</div>` : "";
     const docHTML = leave.documentLink
-      ? `<a href="${leave.documentLink}" target="_blank" class="btn-outline" style="padding:6px 12px; font-size:12px; margin-top:8px; display:inline-flex;"><i data-lucide="paperclip" size="12"></i> View Document</a>`
-      : "";
- 
+      ? `<a href="${leave.documentLink}" target="_blank" class="btn-outline" style="padding:6px 12px;font-size:12px;margin-top:8px;display:inline-flex;"><i data-lucide="paperclip" size="12"></i> View Document</a>` : "";
     return `
       <div class="leave-history-item" id="lhi-${leave.id}">
-        <div style="display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap;">
-          <div class="icon-bg" style="width:44px; height:44px; border-radius:12px; background:var(--accent-soft); color:var(--accent); flex-shrink:0;">
+        <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+          <div class="icon-bg" style="width:44px;height:44px;border-radius:12px;background:var(--accent-soft);color:var(--accent);flex-shrink:0;">
             <i data-lucide="${icon}" size="18"></i>
           </div>
           <div class="lhi-left">
@@ -1756,25 +2366,21 @@ function renderLeaveHistory(leaves) {
             <div class="lhi-meta">
               <span><i data-lucide="calendar" size="12"></i> ${fromFmt} – ${toFmt}</span>
               <span><i data-lucide="clock" size="12"></i> ${leave.days} day${leave.days > 1 ? "s" : ""}</span>
-              <span><i data-lucide="book" size="12"></i> ${leave.subjects || "—"}</span>
               <span><i data-lucide="send" size="12"></i> Applied: ${appliedOn}</span>
             </div>
             <div class="lhi-reason">${leave.reason}</div>
-            ${facultyNoteHTML}
-            ${docHTML}
-            ${canCancel ? `<button class="cancel-leave-btn mt-10" onclick="cancelLeave('${leave.id}')"><i data-lucide="x" size="12"></i> Cancel Application</button>` : ""}
+            ${facultyNoteHTML}${docHTML}
+            ${canCancel ? `<button class="cancel-leave-btn mt-10" onclick="cancelLeave('${leave.id}')"><i data-lucide="x" size="12"></i> Cancel</button>` : ""}
           </div>
-          <div style="margin-left:auto; flex-shrink:0;">
-            <span class="status-pill" style="background:${sc.bg}; color:${sc.color};">${leave.status}</span>
+          <div style="margin-left:auto;flex-shrink:0;">
+            <span class="status-pill" style="background:${sc.bg};color:${sc.color};">${leave.status}</span>
           </div>
         </div>
       </div>`;
   }).join("");
- 
   lucide.createIcons();
 }
  
-// Filter leave history
 window.filterLeaveHistory = function() {
   const statusFilter = document.getElementById("leaveFilterStatus").value;
   const typeFilter = document.getElementById("leaveFilterType").value;
@@ -1784,14 +2390,10 @@ window.filterLeaveHistory = function() {
   renderLeaveHistory(filtered);
 };
  
-// Cancel a pending leave
 window.cancelLeave = async function(leaveId) {
   if (!confirm("Are you sure you want to cancel this leave application?")) return;
   try {
-    await updateDoc(doc(db, "leave_applications", leaveId), {
-      status: "Cancelled",
-      cancelledAt: serverTimestamp()
-    });
+    await updateDoc(doc(db, "leave_applications", leaveId), { status: "Cancelled", cancelledAt: serverTimestamp() });
     const idx = allLeaveApplications.findIndex(l => l.id === leaveId);
     if (idx !== -1) allLeaveApplications[idx].status = "Cancelled";
     updateLeaveStats();
@@ -1802,15 +2404,12 @@ window.cancelLeave = async function(leaveId) {
   }
 };
  
-// Render leave calendar
 window.renderLeaveCalendar = function() {
   const label = document.getElementById("calendarMonthLabel");
   const grid  = document.getElementById("calendarDaysGrid");
   if (!label || !grid) return;
- 
   const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   label.innerText = `${monthNames[calendarMonth]} ${calendarYear}`;
- 
   const approvedLeaveDates = new Set();
   allLeaveApplications.forEach(leave => {
     if (leave.status !== "Approved") return;
@@ -1823,23 +2422,16 @@ window.renderLeaveCalendar = function() {
       cur.setDate(cur.getDate() + 1);
     }
   });
- 
   const today = new Date();
   const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
   const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
- 
   let html = "";
-  for (let i = 0; i < firstDay; i++) {
-    html += `<div class="lc-day empty"></div>`;
-  }
+  for (let i = 0; i < firstDay; i++) html += `<div class="lc-day empty"></div>`;
   for (let d = 1; d <= daysInMonth; d++) {
     const isToday = d === today.getDate() && calendarMonth === today.getMonth() && calendarYear === today.getFullYear();
     const isLeave = approvedLeaveDates.has(d);
-    let cls = "lc-day";
-    if (isToday) cls += " today";
-    else if (isLeave) cls += " leave-day";
-    const title = isLeave ? "Approved Leave" : (isToday ? "Today" : "");
-    html += `<div class="${cls}" title="${title}">${d}</div>`;
+    let cls = "lc-day" + (isToday ? " today" : (isLeave ? " leave-day" : ""));
+    html += `<div class="${cls}">${d}</div>`;
   }
   grid.innerHTML = html;
 };
@@ -1851,18 +2443,15 @@ window.changeCalendarMonth = function(dir) {
   renderLeaveCalendar();
 };
  
-// Set up date listener after DOM ready
 document.addEventListener("DOMContentLoaded", () => {
   setupLeaveDateListeners();
- 
-  // Set min date for leave inputs to today
   const today = new Date().toISOString().split("T")[0];
   const fromEl = document.getElementById("leaveFromDate");
   const toEl = document.getElementById("leaveToDate");
   if (fromEl) fromEl.min = today;
   if (toEl) toEl.min = today;
 });
- 
+
 // ================================================================
 // ========== PORTFOLIO FUNCTIONS =================================
 // ================================================================
@@ -1874,23 +2463,11 @@ async function loadPortfolioData() {
     if (!pfDoc.exists()) return;
     const data = pfDoc.data();
     const fields = ["summary","linkedin","github","website","email","phone","location","availability"];
-    fields.forEach(f => {
-      const el = document.getElementById("pf-" + f);
-      if (el && data[f]) el.value = data[f];
-    });
-    if (Array.isArray(data.skills)) {
-      portfolioSkills = data.skills;
-      portfolioSkills.forEach(s => addSkillChip(s));
-    }
+    fields.forEach(f => { const el = document.getElementById("pf-" + f); if (el && data[f]) el.value = data[f]; });
+    if (Array.isArray(data.skills)) { portfolioSkills = data.skills; portfolioSkills.forEach(s => addSkillChip(s)); }
     const lists = ["schooling","education","certifications","experience","projects"];
-    lists.forEach(type => {
-      if (Array.isArray(data[type])) {
-        data[type].forEach(entry => addEntry(type, entry));
-      }
-    });
-  } catch (err) {
-    console.error("Portfolio load error:", err);
-  }
+    lists.forEach(type => { if (Array.isArray(data[type])) data[type].forEach(entry => addEntry(type, entry)); });
+  } catch (err) { console.error("Portfolio load error:", err); }
 }
  
 window.savePortfolio = async function() {
@@ -1909,37 +2486,21 @@ window.savePortfolio = async function() {
       return entries;
     };
     const portfolioPayload = {
-      studentId: auth.currentUser.uid,
-      studentName: studentData ? studentData.name : "",
-      department: studentData ? studentData.department : "",
-      prn: studentData ? studentData.prn : "",
-      summary: getVal("pf-summary"),
-      linkedin: getVal("pf-linkedin"),
-      github: getVal("pf-github"),
-      website: getVal("pf-website"),
-      email: getVal("pf-email"),
-      phone: getVal("pf-phone"),
-      location: getVal("pf-location"),
-      availability: getVal("pf-availability"),
+      studentId: auth.currentUser.uid, studentName: studentData ? studentData.name : "",
+      department: studentData ? studentData.department : "", prn: studentData ? studentData.prn : "",
+      summary: getVal("pf-summary"), linkedin: getVal("pf-linkedin"), github: getVal("pf-github"),
+      website: getVal("pf-website"), email: getVal("pf-email"), phone: getVal("pf-phone"),
+      location: getVal("pf-location"), availability: getVal("pf-availability"),
       skills: [...portfolioSkills],
-      schooling: collectEntries("schooling"),
-      education: collectEntries("education"),
-      certifications: collectEntries("certifications"),
-      experience: collectEntries("experience"),
-      projects: collectEntries("projects"),
-      updatedAt: serverTimestamp()
+      schooling: collectEntries("schooling"), education: collectEntries("education"),
+      certifications: collectEntries("certifications"), experience: collectEntries("experience"),
+      projects: collectEntries("projects"), updatedAt: serverTimestamp()
     };
     await setDoc(doc(db, "portfolios", auth.currentUser.uid), portfolioPayload);
     const indicator = document.getElementById("portfolioSaveIndicator");
-    if (indicator) {
-      indicator.classList.add("visible");
-      setTimeout(() => indicator.classList.remove("visible"), 3000);
-    }
+    if (indicator) { indicator.classList.add("visible"); setTimeout(() => indicator.classList.remove("visible"), 3000); }
     lucide.createIcons();
-  } catch (err) {
-    console.error("Save portfolio error:", err);
-    alert("Failed to save portfolio. Please try again.");
-  }
+  } catch (err) { console.error("Save portfolio error:", err); alert("Failed to save portfolio."); }
 };
  
 window.addEntry = function(type, data = {}) {
@@ -1947,57 +2508,56 @@ window.addEntry = function(type, data = {}) {
   if (!container) return;
   const id = "entry-" + Date.now() + "-" + Math.random().toString(36).substr(2,5);
   const div = document.createElement("div");
-  div.className = "dynamic-entry";
-  div.id = id;
+  div.className = "dynamic-entry"; div.id = id;
   let html = `<button class="entry-remove-btn" onclick="removeEntry('${id}')" title="Remove">×</button>`;
   if (type === "schooling") {
     html += `<div class="entry-grid-2">
-      <div><label class="form-label">School / College Name</label><input type="text" data-field="school" value="${data.school||''}" placeholder="e.g. Vidya Niketan High School"></div>
-      <div><label class="form-label">Board / Council</label><input type="text" data-field="board" value="${data.board||''}" placeholder="e.g. CBSE, State Board"></div>
+      <div><label class="form-label">School Name</label><input type="text" data-field="school" value="${data.school||''}" placeholder="e.g. Vidya Niketan High School"></div>
+      <div><label class="form-label">Board</label><input type="text" data-field="board" value="${data.board||''}" placeholder="e.g. CBSE"></div>
       <div><label class="form-label">Standard</label><input type="text" data-field="standard" value="${data.standard||''}" placeholder="e.g. 10th Grade"></div>
       <div><label class="form-label">Year of Passing</label><input type="text" data-field="year" value="${data.year||''}" placeholder="e.g. 2020"></div>
       <div><label class="form-label">Percentage / CGPA</label><input type="text" data-field="score" value="${data.score||''}" placeholder="e.g. 87.4%"></div>
-      <div><label class="form-label">City / Location</label><input type="text" data-field="city" value="${data.city||''}" placeholder="e.g. Pune"></div>
+      <div><label class="form-label">City</label><input type="text" data-field="city" value="${data.city||''}" placeholder="e.g. Pune"></div>
     </div>`;
   } else if (type === "education") {
     html += `<div class="entry-grid-2">
-      <div><label class="form-label">Institution Name</label><input type="text" data-field="institution" value="${data.institution||''}" placeholder="e.g. MIT Academy of Engineering"></div>
-      <div><label class="form-label">Degree / Programme</label><input type="text" data-field="degree" value="${data.degree||''}" placeholder="e.g. B.E. Computer Engineering"></div>
-      <div><label class="form-label">Specialization / Branch</label><input type="text" data-field="branch" value="${data.branch||''}" placeholder="e.g. Artificial Intelligence"></div>
-      <div><label class="form-label">University</label><input type="text" data-field="university" value="${data.university||''}" placeholder="e.g. Savitribai Phule Pune University"></div>
-      <div><label class="form-label">Start Year</label><input type="text" data-field="startYear" value="${data.startYear||''}" placeholder="e.g. 2022"></div>
-      <div><label class="form-label">End Year (or Expected)</label><input type="text" data-field="endYear" value="${data.endYear||''}" placeholder="e.g. 2026"></div>
-      <div><label class="form-label">CGPA / Percentage</label><input type="text" data-field="cgpa" value="${data.cgpa||''}" placeholder="e.g. 9.2 / 10"></div>
-      <div><label class="form-label">Institution Website</label><input type="url" data-field="institutionUrl" value="${data.institutionUrl||''}" placeholder="https://mitwpu.edu.in"></div>
+      <div><label class="form-label">Institution Name</label><input type="text" data-field="institution" value="${data.institution||''}" placeholder="e.g. MIT Academy"></div>
+      <div><label class="form-label">Degree</label><input type="text" data-field="degree" value="${data.degree||''}" placeholder="e.g. B.E. Computer Engineering"></div>
+      <div><label class="form-label">Branch</label><input type="text" data-field="branch" value="${data.branch||''}" placeholder="e.g. AI"></div>
+      <div><label class="form-label">University</label><input type="text" data-field="university" value="${data.university||''}" placeholder="e.g. SPPU"></div>
+      <div><label class="form-label">Start Year</label><input type="text" data-field="startYear" value="${data.startYear||''}" placeholder="2022"></div>
+      <div><label class="form-label">End Year</label><input type="text" data-field="endYear" value="${data.endYear||''}" placeholder="2026"></div>
+      <div><label class="form-label">CGPA</label><input type="text" data-field="cgpa" value="${data.cgpa||''}" placeholder="9.2 / 10"></div>
+      <div><label class="form-label">Website</label><input type="url" data-field="institutionUrl" value="${data.institutionUrl||''}" placeholder="https://"></div>
     </div>`;
   } else if (type === "certifications") {
     html += `<div class="entry-grid-2">
       <div><label class="form-label">Certification Title</label><input type="text" data-field="title" value="${data.title||''}" placeholder="e.g. AWS Cloud Practitioner"></div>
       <div><label class="form-label">Issuing Organization</label><input type="text" data-field="issuer" value="${data.issuer||''}" placeholder="e.g. Amazon Web Services"></div>
-      <div><label class="form-label">Issue Date</label><input type="text" data-field="issueDate" value="${data.issueDate||''}" placeholder="e.g. June 2024"></div>
-      <div><label class="form-label">Expiry Date</label><input type="text" data-field="expiryDate" value="${data.expiryDate||''}" placeholder="e.g. June 2027 / No Expiry"></div>
-      <div style="grid-column:1/-1;"><label class="form-label">Credential / Certificate Link</label><input type="url" data-field="credentialUrl" value="${data.credentialUrl||''}" placeholder="https://coursera.org/verify/..."></div>
+      <div><label class="form-label">Issue Date</label><input type="text" data-field="issueDate" value="${data.issueDate||''}" placeholder="June 2024"></div>
+      <div><label class="form-label">Expiry Date</label><input type="text" data-field="expiryDate" value="${data.expiryDate||''}" placeholder="No Expiry"></div>
+      <div style="grid-column:1/-1;"><label class="form-label">Credential Link</label><input type="url" data-field="credentialUrl" value="${data.credentialUrl||''}" placeholder="https://"></div>
     </div>`;
   } else if (type === "experience") {
     html += `<div class="entry-grid-2">
-      <div><label class="form-label">Company / Organization</label><input type="text" data-field="company" value="${data.company||''}" placeholder="e.g. Infosys Ltd."></div>
-      <div><label class="form-label">Role / Position</label><input type="text" data-field="role" value="${data.role||''}" placeholder="e.g. Software Intern"></div>
-      <div><label class="form-label">Employment Type</label><input type="text" data-field="type" value="${data.type||''}" placeholder="e.g. Internship / Full-time"></div>
-      <div><label class="form-label">Location</label><input type="text" data-field="location" value="${data.location||''}" placeholder="e.g. Pune, Maharashtra"></div>
-      <div><label class="form-label">Start Date</label><input type="text" data-field="startDate" value="${data.startDate||''}" placeholder="e.g. May 2024"></div>
-      <div><label class="form-label">End Date (or Present)</label><input type="text" data-field="endDate" value="${data.endDate||''}" placeholder="e.g. July 2024 / Present"></div>
-      <div style="grid-column:1/-1;"><label class="form-label">Description / Key Responsibilities</label><textarea data-field="description" rows="3" placeholder="Briefly describe your role and achievements...">${data.description||''}</textarea></div>
-      <div style="grid-column:1/-1;"><label class="form-label">Company Website / LinkedIn</label><input type="url" data-field="companyUrl" value="${data.companyUrl||''}" placeholder="https://company.com"></div>
+      <div><label class="form-label">Company</label><input type="text" data-field="company" value="${data.company||''}" placeholder="e.g. Infosys Ltd."></div>
+      <div><label class="form-label">Role</label><input type="text" data-field="role" value="${data.role||''}" placeholder="e.g. Software Intern"></div>
+      <div><label class="form-label">Type</label><input type="text" data-field="type" value="${data.type||''}" placeholder="Internship / Full-time"></div>
+      <div><label class="form-label">Location</label><input type="text" data-field="location" value="${data.location||''}" placeholder="Pune, Maharashtra"></div>
+      <div><label class="form-label">Start Date</label><input type="text" data-field="startDate" value="${data.startDate||''}" placeholder="May 2024"></div>
+      <div><label class="form-label">End Date</label><input type="text" data-field="endDate" value="${data.endDate||''}" placeholder="July 2024"></div>
+      <div style="grid-column:1/-1;"><label class="form-label">Description</label><textarea data-field="description" rows="3">${data.description||''}</textarea></div>
+      <div style="grid-column:1/-1;"><label class="form-label">Company Website</label><input type="url" data-field="companyUrl" value="${data.companyUrl||''}" placeholder="https://"></div>
     </div>`;
   } else if (type === "projects") {
     html += `<div class="entry-grid-2">
       <div><label class="form-label">Project Title</label><input type="text" data-field="title" value="${data.title||''}" placeholder="e.g. Smart Attendance System"></div>
-      <div><label class="form-label">Technologies Used</label><input type="text" data-field="tech" value="${data.tech||''}" placeholder="e.g. Python, Flask, OpenCV"></div>
-      <div><label class="form-label">Project Type</label><input type="text" data-field="projectType" value="${data.projectType||''}" placeholder="e.g. Academic / Personal"></div>
-      <div><label class="form-label">Duration</label><input type="text" data-field="duration" value="${data.duration||''}" placeholder="e.g. Jan 2024 – Mar 2024"></div>
-      <div style="grid-column:1/-1;"><label class="form-label">Project Description</label><textarea data-field="description" rows="3" placeholder="Explain the problem solved and impact...">${data.description||''}</textarea></div>
-      <div><label class="form-label">Live Demo / Project Link</label><input type="url" data-field="demoUrl" value="${data.demoUrl||''}" placeholder="https://yourproject.com"></div>
-      <div><label class="form-label">Source Code (GitHub) Link</label><input type="url" data-field="sourceUrl" value="${data.sourceUrl||''}" placeholder="https://github.com/yourname/repo"></div>
+      <div><label class="form-label">Technologies</label><input type="text" data-field="tech" value="${data.tech||''}" placeholder="Python, Flask, OpenCV"></div>
+      <div><label class="form-label">Project Type</label><input type="text" data-field="projectType" value="${data.projectType||''}" placeholder="Academic / Personal"></div>
+      <div><label class="form-label">Duration</label><input type="text" data-field="duration" value="${data.duration||''}" placeholder="Jan 2024 – Mar 2024"></div>
+      <div style="grid-column:1/-1;"><label class="form-label">Description</label><textarea data-field="description" rows="3">${data.description||''}</textarea></div>
+      <div><label class="form-label">Live Demo Link</label><input type="url" data-field="demoUrl" value="${data.demoUrl||''}" placeholder="https://"></div>
+      <div><label class="form-label">GitHub Link</label><input type="url" data-field="sourceUrl" value="${data.sourceUrl||''}" placeholder="https://github.com/"></div>
     </div>`;
   }
   div.innerHTML = html;
@@ -2005,10 +2565,7 @@ window.addEntry = function(type, data = {}) {
   lucide.createIcons();
 };
  
-window.removeEntry = function(id) {
-  const el = document.getElementById(id);
-  if (el) el.remove();
-};
+window.removeEntry = function(id) { const el = document.getElementById(id); if (el) el.remove(); };
  
 window.addSkillChip = function(skillText) {
   const skill = skillText.trim();
@@ -2018,8 +2575,7 @@ window.addSkillChip = function(skillText) {
   const input = document.getElementById("skillInput");
   if (!area || !input) return;
   const chip = document.createElement("div");
-  chip.className = "skill-chip";
-  chip.dataset.skill = skill;
+  chip.className = "skill-chip"; chip.dataset.skill = skill;
   chip.innerHTML = `${skill}<button class="skill-chip-remove" onclick="removeSkillChip('${skill.replace(/'/g,"\\'")}', this.parentElement)" title="Remove">×</button>`;
   area.insertBefore(chip, input);
   input.value = "";
@@ -2068,24 +2624,16 @@ function renderPortfolioPreview() {
   const dept = studentData ? studentData.department : "";
   const prn = studentData ? studentData.prn : "";
   const summary = getVal("pf-summary");
-  const linkedin = getVal("pf-linkedin");
-  const github = getVal("pf-github");
-  const website = getVal("pf-website");
-  const email = getVal("pf-email");
-  const phone = getVal("pf-phone");
-  const location = getVal("pf-location");
-  const availability = getVal("pf-availability");
-  const schoolingEntries = collectEntries("schooling");
-  const educationEntries = collectEntries("education");
-  const certEntries = collectEntries("certifications");
-  const expEntries = collectEntries("experience");
-  const projEntries = collectEntries("projects");
+  const linkedin = getVal("pf-linkedin"); const github = getVal("pf-github"); const website = getVal("pf-website");
+  const email = getVal("pf-email"); const phone = getVal("pf-phone"); const location = getVal("pf-location"); const availability = getVal("pf-availability");
+  const schoolingEntries = collectEntries("schooling"); const educationEntries = collectEntries("education");
+  const certEntries = collectEntries("certifications"); const expEntries = collectEntries("experience"); const projEntries = collectEntries("projects");
   const linkTag = (url, label) => url ? `<a href="${url}" target="_blank" class="preview-link" style="margin-right:10px;">${label} ↗</a>` : "";
-  const renderSchooling = schoolingEntries.map(s => `<div class="preview-entry"><div class="preview-entry-title">${s.school||"—"} <span style="font-weight:500;color:var(--muted);">· ${s.standard||""}</span></div><div class="preview-entry-sub">${s.board||""} · ${s.year||""} · ${s.city||""}</div>${s.score?`<div class="preview-entry-sub">Score: <b>${s.score}</b></div>`:""}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No schooling added.</p>`;
-  const renderEducation = educationEntries.map(e => `<div class="preview-entry"><div class="preview-entry-title">${e.degree||"—"} <span style="font-weight:500;color:var(--muted);">· ${e.branch||""}</span></div><div class="preview-entry-sub">${e.institution||""} · ${e.university||""}</div><div class="preview-entry-sub">${e.startYear||""} – ${e.endYear||""} · CGPA: ${e.cgpa||"N/A"}</div>${linkTag(e.institutionUrl,"Website")}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No education added.</p>`;
-  const renderCerts = certEntries.map(c => `<div class="preview-entry"><div class="preview-entry-title">${c.title||"—"}</div><div class="preview-entry-sub">${c.issuer||""} · ${c.issueDate||""} ${c.expiryDate?"– "+c.expiryDate:""}</div>${linkTag(c.credentialUrl,"View Certificate")}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No certifications added.</p>`;
-  const renderExp = expEntries.map(e => `<div class="preview-entry"><div class="preview-entry-title">${e.role||"—"} <span style="font-weight:500;color:var(--muted);">· ${e.company||""}</span></div><div class="preview-entry-sub">${e.type||""} · ${e.location||""} · ${e.startDate||""} – ${e.endDate||""}</div>${e.description?`<div class="preview-entry-desc">${e.description}</div>`:""}${linkTag(e.companyUrl,"Company Website")}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No experience added.</p>`;
-  const renderProjects = projEntries.map(p => `<div class="preview-entry"><div class="preview-entry-title">${p.title||"—"} <span style="font-weight:500;color:var(--muted);">· ${p.projectType||""}</span></div><div class="preview-entry-sub">${p.tech||""} · ${p.duration||""}</div>${p.description?`<div class="preview-entry-desc">${p.description}</div>`:""}<div style="margin-top:6px;">${linkTag(p.demoUrl,"Live Demo")}${linkTag(p.sourceUrl,"Source Code")}</div></div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No projects added.</p>`;
+  const renderSchooling = schoolingEntries.map(s => `<div class="preview-entry"><div class="preview-entry-title">${s.school||"—"} · ${s.standard||""}</div><div class="preview-entry-sub">${s.board||""} · ${s.year||""} · ${s.city||""}</div>${s.score?`<div class="preview-entry-sub">Score: <b>${s.score}</b></div>`:""}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No schooling added.</p>`;
+  const renderEducation = educationEntries.map(e => `<div class="preview-entry"><div class="preview-entry-title">${e.degree||"—"} · ${e.branch||""}</div><div class="preview-entry-sub">${e.institution||""} · ${e.university||""}</div><div class="preview-entry-sub">${e.startYear||""} – ${e.endYear||""} · CGPA: ${e.cgpa||"N/A"}</div>${linkTag(e.institutionUrl,"Website")}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No education added.</p>`;
+  const renderCerts = certEntries.map(c => `<div class="preview-entry"><div class="preview-entry-title">${c.title||"—"}</div><div class="preview-entry-sub">${c.issuer||""} · ${c.issueDate||""}</div>${linkTag(c.credentialUrl,"View Certificate")}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No certifications added.</p>`;
+  const renderExp = expEntries.map(e => `<div class="preview-entry"><div class="preview-entry-title">${e.role||"—"} · ${e.company||""}</div><div class="preview-entry-sub">${e.type||""} · ${e.location||""} · ${e.startDate||""} – ${e.endDate||""}</div>${e.description?`<div class="preview-entry-desc">${e.description}</div>`:""}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No experience added.</p>`;
+  const renderProjects = projEntries.map(p => `<div class="preview-entry"><div class="preview-entry-title">${p.title||"—"} · ${p.projectType||""}</div><div class="preview-entry-sub">${p.tech||""} · ${p.duration||""}</div>${p.description?`<div class="preview-entry-desc">${p.description}</div>`:""}<div style="margin-top:6px;">${linkTag(p.demoUrl,"Live Demo")}${linkTag(p.sourceUrl,"Source Code")}</div></div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No projects added.</p>`;
   const renderSkills = portfolioSkills.length > 0 ? portfolioSkills.map(s => `<span class="preview-skill-tag">${s}</span>`).join("") : `<p style="color:var(--muted);font-size:13px;">No skills added.</p>`;
   const contactParts = [email?`<span>${email}</span>`:"",phone?`<span>${phone}</span>`:"",location?`<span>${location}</span>`:"",availability?`<span style="color:var(--green);font-weight:700;">${availability}</span>`:""].filter(Boolean).join(`<span style="color:var(--border);margin:0 6px;">|</span>`);
   box.innerHTML = `
@@ -2154,19 +2702,13 @@ window.exportProfessionalPDF = async function() {
     return entries;
   };
   const name = studentData ? studentData.name.trim() : "Student";
-  const dept = studentData ? studentData.department : "";
-  const prn = studentData ? studentData.prn : "";
-  const summary = getVal("pf-summary");
-  const email = getVal("pf-email"); const phone = getVal("pf-phone");
-  const location = getVal("pf-location"); const linkedin = getVal("pf-linkedin");
-  const github = getVal("pf-github"); const website = getVal("pf-website");
-  const availability = getVal("pf-availability");
+  const dept = studentData ? studentData.department : ""; const prn = studentData ? studentData.prn : "";
+  const summary = getVal("pf-summary"); const email = getVal("pf-email"); const phone = getVal("pf-phone");
+  const location = getVal("pf-location"); const linkedin = getVal("pf-linkedin"); const github = getVal("pf-github");
+  const website = getVal("pf-website"); const availability = getVal("pf-availability");
   const schoolingList = collectEntries("schooling"); const educationList = collectEntries("education");
-  const certList = collectEntries("certifications"); const expList = collectEntries("experience");
-  const projList = collectEntries("projects");
-  const pageW = 210; const pageH = 297;
-  const marginL = 18; const marginR = 18;
-  const contentW = pageW - marginL - marginR;
+  const certList = collectEntries("certifications"); const expList = collectEntries("experience"); const projList = collectEntries("projects");
+  const pageW = 210; const pageH = 297; const marginL = 18; const marginR = 18; const contentW = pageW - marginL - marginR;
   let y = 0;
   const checkPage = (needed = 12) => { if (y + needed > pageH - 14) { pdf.addPage(); y = 18; } };
   const sectionHeader = (title) => {
@@ -2184,16 +2726,12 @@ window.exportProfessionalPDF = async function() {
   const contactParts = [email, phone, location, availability].filter(Boolean).join("  ·  ");
   pdf.setTextColor(200,200,200); pdf.setFontSize(8);
   pdf.text(contactParts, marginL, 28, { maxWidth: contentW });
-  const linkParts = [linkedin?"LinkedIn: "+linkedin:"",github?"GitHub: "+github:"",website?"Website: "+website:""].filter(Boolean).join("    ");
-  pdf.setTextColor(147,197,253); pdf.setFontSize(7.5);
-  if (linkParts) pdf.text(linkParts, marginL, 34, { maxWidth: contentW });
   y = 42; pdf.setTextColor(0,0,0);
   if (summary) { sectionHeader("Profile Summary"); pdf.setFont(undefined,"normal"); pdf.setFontSize(9.5); pdf.setTextColor(30,41,59); const sl = pdf.splitTextToSize(summary, contentW); sl.forEach(l => { checkPage(6); pdf.text(l, marginL, y); y += 5; }); y += 4; }
   if (educationList.length > 0) { sectionHeader("Education"); educationList.forEach(e => { checkPage(18); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${e.degree||""}${e.branch?" · "+e.branch:""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${e.institution||""}  ·  ${e.university||""}`, marginL, y+5); pdf.text(`${e.startYear||""} – ${e.endYear||""}  |  CGPA: ${e.cgpa||"N/A"}`, pageW-marginR, y+5, {align:"right"}); y += 12; }); y += 2; }
-  if (schoolingList.length > 0) { sectionHeader("Schooling"); schoolingList.forEach(s => { checkPage(14); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${s.school||""} · ${s.standard||""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${s.board||""}  ·  ${s.city||""}`, marginL, y+5); pdf.text(`Year: ${s.year||""}  |  Score: ${s.score||"N/A"}`, pageW-marginR, y+5, {align:"right"}); y += 12; }); y += 2; }
   if (expList.length > 0) { sectionHeader("Experience"); expList.forEach(e => { checkPage(22); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${e.role||""}  ·  ${e.company||""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${e.type||""}  ·  ${e.location||""}`, marginL, y+5); pdf.text(`${e.startDate||""} – ${e.endDate||""}`, pageW-marginR, y+5, {align:"right"}); if (e.description) { pdf.setTextColor(30,41,59); const lines = pdf.splitTextToSize(e.description, contentW); y += 9; lines.forEach(l => { checkPage(5); pdf.text(l, marginL, y); y += 4.5; }); } else { y += 9; } y += 4; }); }
-  if (projList.length > 0) { sectionHeader("Projects"); projList.forEach(p => { checkPage(22); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${p.title||""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${p.tech||""}  ·  ${p.projectType||""}  ·  ${p.duration||""}`, marginL, y+5); if (p.description) { pdf.setTextColor(30,41,59); const lines = pdf.splitTextToSize(p.description, contentW); y += 9; lines.forEach(l => { checkPage(5); pdf.text(l, marginL, y); y += 4.5; }); } else { y += 9; } const pl = [p.demoUrl?"Demo: "+p.demoUrl:"",p.sourceUrl?"Source: "+p.sourceUrl:""].filter(Boolean).join("    "); if (pl) { checkPage(6); pdf.setTextColor(37,99,235); pdf.setFontSize(8); pdf.text(pl, marginL, y, {maxWidth:contentW}); y += 5; pdf.setTextColor(0,0,0); } y += 3; }); }
-  if (certList.length > 0) { sectionHeader("Certifications"); certList.forEach(c => { checkPage(14); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${c.title||""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${c.issuer||""}  ·  ${c.issueDate||""}${c.expiryDate?" – "+c.expiryDate:""}`, marginL, y+5); if (c.credentialUrl) { pdf.setTextColor(37,99,235); pdf.setFontSize(8); pdf.text("Credential: "+c.credentialUrl, marginL, y+9, {maxWidth:contentW}); y += 5; } y += 12; }); y += 2; }
+  if (projList.length > 0) { sectionHeader("Projects"); projList.forEach(p => { checkPage(22); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${p.title||""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${p.tech||""}  ·  ${p.projectType||""}`, marginL, y+5); if (p.description) { pdf.setTextColor(30,41,59); const lines = pdf.splitTextToSize(p.description, contentW); y += 9; lines.forEach(l => { checkPage(5); pdf.text(l, marginL, y); y += 4.5; }); } else { y += 9; } y += 3; }); }
+  if (certList.length > 0) { sectionHeader("Certifications"); certList.forEach(c => { checkPage(14); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${c.title||""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${c.issuer||""}  ·  ${c.issueDate||""}`, marginL, y+5); y += 12; }); y += 2; }
   if (portfolioSkills.length > 0) { sectionHeader("Technical Skills"); const st = portfolioSkills.join("  ·  "); pdf.setFont(undefined,"normal"); pdf.setFontSize(9.5); pdf.setTextColor(30,41,59); const sl = pdf.splitTextToSize(st, contentW); sl.forEach(l => { checkPage(6); pdf.text(l, marginL, y); y += 5; }); y += 4; }
   const pageCount = pdf.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) { pdf.setPage(i); pdf.setFontSize(7.5); pdf.setTextColor(150,150,150); pdf.text(`Generated via EduSmart 360 · ${new Date().toLocaleDateString("en-IN")} · Page ${i} of ${pageCount}`, pageW/2, pageH-8, {align:"center"}); }
@@ -2201,7 +2739,7 @@ window.exportProfessionalPDF = async function() {
 };
  
 // ================================================================
-// ========== EXISTING FUNCTIONS (unchanged) ======================
+// ========== EXISTING FUNCTIONS ==================================
 // ================================================================
  
 async function loadAssignments() {
@@ -2211,7 +2749,7 @@ async function loadAssignments() {
     const q = query(collection(db, "assignments"), where("department", "==", studentData.department));
     const snap = await getDocs(q);
     if (snap.empty) {
-      container.innerHTML = `<div class="empty-state"><i data-lucide="package-open" size="40"></i><p>No assignments found for ${studentData.department} Department.</p></div>`;
+      container.innerHTML = `<div class="empty-state"><i data-lucide="package-open" size="40"></i><p>No assignments found.</p></div>`;
       lucide.createIcons(); return;
     }
     const sorted = snap.docs.sort((a, b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0));
@@ -2222,21 +2760,21 @@ async function loadAssignments() {
       const isOverdue = deadlineDate && deadlineDate < new Date();
       const formattedDeadline = deadlineDate ? deadlineDate.toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }) : "No Deadline";
       container.innerHTML += `
-        <div style="border:1px solid ${isOverdue?'var(--red)':'var(--border)'}; border-left:5px solid ${isOverdue?'var(--red)':'var(--accent)'}; border-radius:16px; padding:20px; margin-bottom:12px; background:white; transition:0.2s;">
+        <div style="border:1px solid ${isOverdue?'var(--red)':'var(--border)'}; border-left:5px solid ${isOverdue?'var(--red)':'var(--accent)'}; border-radius:16px; padding:20px; margin-bottom:12px; background:white;">
           <div class="flex-between">
-            <div style="flex:1; min-width:0;">
-              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px;">
-                <h4 style="margin:0; color:var(--primary); font-size:15px;">${task.title}</h4>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+                <h4 style="margin:0;color:var(--primary);font-size:15px;">${task.title}</h4>
                 <span class="status-pill badge-blue" style="font-size:10px;">Sem ${task.semester||'—'}</span>
               </div>
-              <p style="font-size:13px; color:var(--muted); margin:0 0 8px 0;"><b>Subject:</b> ${task.subject||'—'} &nbsp;|&nbsp; <b>Faculty:</b> ${task.facultyName||'—'}</p>
-              <div style="display:flex; align-items:center; gap:6px;">
-                <i data-lucide="calendar" size="13" style="color:${isOverdue?'var(--red)':'var(--orange)'}; flex-shrink:0;"></i>
-                <small style="font-weight:700; color:${isOverdue?'var(--red)':'var(--orange)'};">Deadline: ${formattedDeadline}${isOverdue?' (Overdue)':''}</small>
+              <p style="font-size:13px;color:var(--muted);margin:0 0 8px;"><b>Subject:</b> ${task.subject||'—'} | <b>Faculty:</b> ${task.facultyName||'—'}</p>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <i data-lucide="calendar" size="13" style="color:${isOverdue?'var(--red)':'var(--orange)'};"></i>
+                <small style="font-weight:700;color:${isOverdue?'var(--red)':'var(--orange)'};">Deadline: ${formattedDeadline}${isOverdue?' (Overdue)':''}</small>
               </div>
             </div>
-            <div style="margin-left:16px; flex-shrink:0;">
-              <a href="${task.link||'#'}" target="_blank" class="btn-primary" style="text-decoration:none; font-size:13px; padding:10px 18px;">Open Task</a>
+            <div style="margin-left:16px;flex-shrink:0;">
+              <a href="${task.link||'#'}" target="_blank" class="btn-primary" style="text-decoration:none;font-size:13px;padding:10px 18px;">Open Task</a>
             </div>
           </div>
         </div>`;
@@ -2244,7 +2782,7 @@ async function loadAssignments() {
     lucide.createIcons();
   } catch (err) {
     console.error("Assignment error:", err);
-    container.innerHTML = `<div class="empty-state"><p>Error loading assignments. Please refresh.</p></div>`;
+    container.innerHTML = `<div class="empty-state"><p>Error loading assignments.</p></div>`;
   }
 }
  
@@ -2304,15 +2842,12 @@ async function loadPublishedResults() {
     snap.forEach(docSnap => {
       const res = docSnap.data();
       const breakdownHTML = res.breakdown && res.breakdown.length > 0
-        ? `<div style="margin-top:16px;"><small style="font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:1px;">Question-wise Breakdown</small><div style="margin-top:8px;">${res.breakdown.map((b,idx)=>`<div class="breakdown-pill"><div style="font-weight:700;">Q${idx+1}: <span style="color:var(--accent);">${b.marks} Marks</span></div>${b.comment&&b.comment.trim()?`<div style="font-size:11px;color:var(--muted);margin-top:3px;">💬 ${b.comment}</div>`:''}</div>`).join('')}</div></div>` : '';
+        ? `<div style="margin-top:16px;"><small style="font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:1px;">Question-wise Breakdown</small><div style="margin-top:8px;">${res.breakdown.map((b,idx)=>`<div class="breakdown-pill"><div>Q${idx+1}: <span style="color:var(--accent);">${b.marks} Marks</span></div>${b.comment&&b.comment.trim()?`<div style="font-size:11px;color:var(--muted);margin-top:3px;">💬 ${b.comment}</div>`:''}</div>`).join('')}</div></div>` : '';
       container.innerHTML += `
         <div class="card result-card">
           <div class="flex-between">
             <div><h3 style="margin:0 0 4px;">${res.examTitle}</h3><small style="color:var(--muted);">Published: ${res.publishedAt?.toDate().toLocaleDateString()||'—'}</small></div>
-            <div style="text-align:center;">
-              <div class="final-score-box"><div class="score-main">${res.obtainedMarks??0}</div></div>
-              <div style="font-size:12px;font-weight:700;margin-top:6px;color:var(--muted);">of ${res.maxMarks??0}</div>
-            </div>
+            <div style="text-align:center;"><div class="final-score-box"><div class="score-main">${res.obtainedMarks??0}</div></div><div style="font-size:12px;font-weight:700;margin-top:6px;color:var(--muted);">of ${res.maxMarks??0}</div></div>
           </div>
           ${breakdownHTML}
           <div style="margin-top:16px;"><button class="btn-outline w-100" onclick="showSection('grievance')">Dispute This Result</button></div>
@@ -2371,7 +2906,7 @@ window.submitGrievance = async function() {
     alert("Dispute ticket submitted successfully.");
     document.getElementById("grievanceDetails").value = "";
     loadExistingGrievances();
-  } catch (err) { console.error("Grievance submit error:", err); alert("Failed to submit. Please try again."); }
+  } catch (err) { alert("Failed to submit. Please try again."); }
 };
  
 async function loadExistingGrievances() {
@@ -2409,7 +2944,6 @@ async function loadExistingGrievances() {
         </div>`;
     }
   } catch (err) {
-    console.error("Grievance load error:", err);
     container.innerHTML = `<div class="empty-state"><p>Error loading grievances.</p></div>`;
   }
   lucide.createIcons();
@@ -2447,7 +2981,7 @@ window.submitReevaluation = async function() {
     alert("Re-Evaluation request submitted successfully.");
     document.getElementById("reevalReason").value = "";
     loadReevaluationHistory();
-  } catch (err) { console.error("Reeval submit error:", err); alert("Failed to submit. Please try again."); }
+  } catch (err) { alert("Failed to submit. Please try again."); }
 };
  
 async function loadReevaluationHistory() {
@@ -2463,7 +2997,7 @@ async function loadReevaluationHistory() {
     snap.forEach(docSnap => {
       const data = docSnap.data();
       const pdfBtn = data.answerSheetURL
-        ? `<a href="${data.answerSheetURL}" target="_blank" class="btn-outline" style="margin-top:12px;display:inline-flex;">View Answer Sheet (PDF)</a>`
+        ? `<a href="${data.answerSheetURL}" target="_blank" class="btn-outline" style="margin-top:12px;display:inline-flex;">View Answer Sheet</a>`
         : `<small style="color:var(--muted);display:block;margin-top:10px;">Answer sheet not uploaded yet.</small>`;
       container.innerHTML += `
         <div class="grievance-card">
@@ -2476,7 +3010,6 @@ async function loadReevaluationHistory() {
         </div>`;
     });
   } catch (err) {
-    console.error("Reeval history error:", err);
     container.innerHTML = `<div class="empty-state"><p>Error loading history.</p></div>`;
   }
 }
@@ -2494,13 +3027,13 @@ async function loadHallTicket() {
         <div class="card-title"><i data-lucide="ticket" size="16"></i> Examination Hall Ticket</div>
         <p><b>Exam Series:</b> ${hall.seriesName}</p>
         <p style="margin-top:6px;"><b>Student:</b> ${hall.studentName} · PRN: ${hall.prn}</p>
-        <hr style="margin:16px 0; border:none; border-top:1px solid var(--border);">
+        <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
         <table class="data-table">
           <thead><tr><th>Subject</th><th>Date</th><th>Time</th></tr></thead>
           <tbody>${hall.subjects.map(sub=>`<tr><td>${sub.title}</td><td>${sub.date}</td><td>${sub.time}</td></tr>`).join("")}</tbody>
         </table>
         <button id="downloadHallBtn" class="btn-primary w-100" style="margin-top:16px;">
-          <i data-lucide="download" size="15"></i> Download Official Hall Ticket (PDF)
+          <i data-lucide="download" size="15"></i> Download Hall Ticket (PDF)
         </button>
       </div>`;
     document.getElementById("downloadHallBtn").addEventListener("click", downloadHallTicket);
@@ -2539,10 +3072,8 @@ window.downloadHallTicket = async function() {
     if (canvas) pdf.addImage(canvas.toDataURL("image/png"),"PNG",155,48,38,38);
     pdf.line(20,250,80,250); pdf.text("Controller of Examinations",20,258);
     pdf.line(130,250,190,250); pdf.text("Principal Signature",130,258);
-    pdf.setFontSize(9);
-    pdf.text("Carry this hall ticket with valid college ID. Entry strictly prohibited without it.",15,275);
     pdf.save(`${hall.seriesName}_Hall_Ticket.pdf`);
-  } catch (err) { console.error("PDF error:", err); alert("Could not generate PDF."); }
+  } catch (err) { alert("Could not generate PDF."); }
 };
  
 window.takeExam = async function(eid) {
@@ -2553,8 +3084,8 @@ window.takeExam = async function(eid) {
   const portal = document.getElementById("examPortal");
   portal.innerHTML = `
     <div class="p-head">
-      <h2 style="margin:0; font-size:18px;">${exam.title}</h2>
-      <div style="display:flex; gap:12px; align-items:center;">
+      <h2 style="margin:0;font-size:18px;">${exam.title}</h2>
+      <div style="display:flex;gap:12px;align-items:center;">
         <div id="timerBox" class="w-pill" style="background:#ef4444;">Time Left: ${formatTime(remainingSeconds)}</div>
         <div id="w-count" class="w-pill">Warnings: 0/3</div>
       </div>
@@ -2621,7 +3152,7 @@ function startTimer(eid) {
     remainingSeconds--;
     const tb = document.getElementById("timerBox");
     if (tb) tb.innerText = "Time Left: " + formatTime(remainingSeconds);
-    if (remainingSeconds <= 0) { clearInterval(examTimerInterval); alert("Time is up! Auto-submitting your exam."); submitResponses(eid, true); }
+    if (remainingSeconds <= 0) { clearInterval(examTimerInterval); alert("Time is up!"); submitResponses(eid, true); }
   }, 1000);
 }
  
@@ -2663,12 +3194,12 @@ function renderAttendanceTable() {
           <div class="att-subject-name">${sub.name}</div>
           <div class="att-subject-code">${sub.code}</div>
         </div>
-        <div style="text-align:center; font-weight:700; color:var(--green);">${sub.present}</div>
-        <div style="text-align:center; font-weight:700; color:var(--red);">${sub.total - sub.present}</div>
-        <div style="text-align:center; font-weight:700;">${sub.total}</div>
+        <div style="text-align:center;font-weight:700;color:var(--green);">${sub.present}</div>
+        <div style="text-align:center;font-weight:700;color:var(--red);">${sub.total - sub.present}</div>
+        <div style="text-align:center;font-weight:700;">${sub.total}</div>
         <div>
-          <div style="font-weight:800; font-size:14px; color:${color}; margin-bottom:5px;">${pct}%</div>
-          <div class="att-bar-wrap"><div class="att-bar" style="width:${pct}%; background:${color};"></div></div>
+          <div style="font-weight:800;font-size:14px;color:${color};margin-bottom:5px;">${pct}%</div>
+          <div class="att-bar-wrap"><div class="att-bar" style="width:${pct}%;background:${color};"></div></div>
         </div>
       </div>`;
   });
@@ -2699,7 +3230,6 @@ function renderCharts() {
       }
     });
   }
- 
   const lineCtx = document.getElementById("monthlyLineChart");
   if (lineCtx) {
     new Chart(lineCtx, {
