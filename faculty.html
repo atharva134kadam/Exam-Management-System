@@ -994,6 +994,99 @@ window.filterCurriculum = function() {
     card.style.display = (matchSearch && matchSem && matchType) ? "flex" : "none";
   });
 };
+
+/* ================= 9. ASSIGNMENTS ================= */
+
+window.publishAssignment = async function() {
+    const title = document.getElementById("asgnTitle").value.trim();
+    const subject = document.getElementById("asgnSubject").value.trim();
+    const deadline = document.getElementById("asgnDeadline").value;
+    const semester = document.getElementById("asgnSemester").value;
+    const link = document.getElementById("asgnLink").value.trim();
+
+    if (!title || !subject || !deadline || !link) {
+        return alert("Please fill all required fields.");
+    }
+
+    try {
+        await addDoc(collection(db, "assignments"), {
+            title,
+            subject,
+            deadline,
+            semester,
+            link,
+            department: facultyDept, // Strictly isolated by faculty dept
+            facultyId: facultyUID,
+            facultyName: document.querySelector(".u-name").innerText,
+            createdAt: serverTimestamp()
+        });
+
+        alert("Assignment Published!");
+        // Clear inputs
+        ["asgnTitle", "asgnSubject", "asgnDeadline", "asgnLink"].forEach(id => document.getElementById(id).value = "");
+        loadAssignments();
+    } catch (err) {
+        console.error(err);
+        alert("Error publishing assignment.");
+    }
+};
+
+window.loadAssignments = async function() {
+    const container = document.getElementById("assignmentList");
+    container.innerHTML = `<div class="loader">Loading...</div>`;
+
+    try {
+        const q = query(
+            collection(db, "assignments"),
+            where("department", "==", facultyDept)
+        );
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+            container.innerHTML = "<p class='empty-msg'>No assignments posted yet.</p>";
+            return;
+        }
+
+        container.innerHTML = "";
+        snap.forEach(docSnap => {
+            const a = docSnap.data();
+            const aid = docSnap.id;
+            const isOverdue = new Date(a.deadline) < new Date();
+
+            container.innerHTML += `
+                <div class="card animate-in" style="border-left: 5px solid ${isOverdue ? 'var(--red)' : 'var(--green)'}">
+                    <div class="flex-between">
+                        <div>
+                            <h4 class="m-0">${a.title}</h4>
+                            <div class="curr-meta">
+                                <span><i data-lucide="book" size="12"></i> ${a.subject}</span>
+                                <span><i data-lucide="layers" size="12"></i> Sem ${a.semester}</span>
+                                <span style="color: ${isOverdue ? 'var(--red)' : 'var(--orange)'}">
+                                    <i data-lucide="calendar-clock" size="12"></i> Due: ${a.deadline}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="curr-card-actions">
+                            <a href="${a.link}" target="_blank" class="curr-btn curr-btn-view">View Link</a>
+                            <button class="curr-btn curr-btn-del" onclick="deleteAssignment('${aid}')">
+                                <i data-lucide="trash-2" size="14"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+        });
+        lucide.createIcons();
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+window.deleteAssignment = async function(id) {
+    if(!confirm("Delete this assignment?")) return;
+    await deleteDoc(doc(db, "assignments", id));
+    loadAssignments();
+};
+
 </script>
  
 <style>
@@ -1447,6 +1540,7 @@ input, select, textarea {
   <button class="tab-item" onclick="showSection('dashboard')"><i data-lucide="layout-dashboard"></i> Home</button>
   <button class="tab-item" onclick="showSection('exams')"><i data-lucide="plus-circle"></i> Exam Management</button>
   <button class="tab-item" onclick="showSection('results')"><i data-lucide="award"></i> Results</button>
+  <button class="tab-item" onclick="showSection('assignments'); loadAssignments();"><i data-lucide="clipboard-list"></i> Assignments</button>
   <button class="tab-item" onclick="showSection('grievance')"><i data-lucide="alert-circle"></i> Grievance</button>
   <button class="tab-item" onclick="showSection('reevaluation')"><i data-lucide="refresh-cw"></i> Re-Evaluation</button>
   <button class="tab-item" onclick="showSection('curriculum'); loadCurriculum();"><i data-lucide="book-marked"></i> Curriculum</button>
@@ -1710,6 +1804,52 @@ input, select, textarea {
       </button>
     </div>
  
+    <div id="assignments" class="section-content">
+    <div style="margin-bottom:24px;">
+        <h3 style="margin:0 0 4px 0;">Assignment Manager</h3>
+        <p style="color:var(--muted); font-size:13px; margin:0;">
+            Post new assignments and submission links for your department.
+        </p>
+    </div>
+
+    <div class="card" style="border: 1px solid var(--accent); background: #f0f7ff;">
+        <h4 style="margin:0 0 15px 0;">Create New Assignment</h4>
+        <div class="curr-form-grid">
+            <div>
+                <label class="curr-label">Assignment Title *</label>
+                <input id="asgnTitle" placeholder="e.g. Java Collection Framework Lab">
+            </div>
+            <div>
+                <label class="curr-label">Subject *</label>
+                <input id="asgnSubject" placeholder="e.g. Advanced Java">
+            </div>
+            <div>
+                <label class="curr-label">Due Date *</label>
+                <input id="asgnDeadline" type="date">
+            </div>
+            <div>
+                <label class="curr-label">Semester *</label>
+                <select id="asgnSemester">
+                    <option value="1">Sem 1</option><option value="2">Sem 2</option>
+                    <option value="3">Sem 3</option><option value="4">Sem 4</option>
+                    <option value="5">Sem 5</option><option value="6">Sem 6</option>
+                    <option value="7">Sem 7</option><option value="8">Sem 8</option>
+                </select>
+            </div>
+            <div class="full">
+                <label class="curr-label">Assignment Link (G-Drive/Doc) *</label>
+                <input id="asgnLink" placeholder="https://docs.google.com/document/d/...">
+            </div>
+        </div>
+        <button class="action-btn mt-20" onclick="publishAssignment()">🚀 Post Assignment</button>
+    </div>
+
+    <h4 class="mt-20">Active Assignments</h4>
+    <div id="assignmentList">
+        <div class="loader">Loading assignments...</div>
+    </div>
+</div>
+
     <!-- Filter Bar -->
     <div class="curr-filter-bar">
       <input id="currSearch" placeholder="🔍  Search title, subject, tag..." oninput="filterCurriculum()" style="margin-top:0;">
