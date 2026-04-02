@@ -64,6 +64,7 @@ async function refreshDashboard() {
   await loadSubjectsForHallTicket();
   await loadDataForResultPublishing();
   await loadReevaluationRequests();
+  await loadAssignments();
   lucide.createIcons();
 }
  
@@ -1744,10 +1745,8 @@ input, select, textarea {
     </div>
  
   </div>
- 
-</div><!-- end .main-content -->
- 
-<div id="assignments" class="section-content">
+
+  <div id="assignments" class="section-content">
     <div style="margin-bottom:24px;">
         <h3 style="margin:0 0 4px 0;">Assignment Manager</h3>
         <p style="color:var(--muted); font-size:13px; margin:0;">
@@ -1786,6 +1785,9 @@ input, select, textarea {
         </div>
         <button class="action-btn mt-20" onclick="publishAssignment()">🚀 Post Assignment</button>
     </div>
+
+ 
+</div><!-- end .main-content -->
 
     <h4 class="mt-20">Active Assignments</h4>
     <div id="assignmentList">
