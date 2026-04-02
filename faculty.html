@@ -51,8 +51,11 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("facultyEmail").innerText = user.email;
 
   await refreshDashboard();
-  showSection('dashboard'); 
-  loadStudents(); 
+
+setTimeout(async () => {
+  showSection('dashboard');
+  await loadStudents();   // 👈 ensures dept is set + DOM ready
+}, 300);
 });
 
 async function refreshDashboard() {
