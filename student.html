@@ -872,11 +872,13 @@ async function loadDashboardData() {
     ]);
 }
 
+/* Inside your <script type="module"> */
+
 async function loadAssignments() {
     const container = document.getElementById("assignmentList");
-    
+    if (!studentData) return;
+
     try {
-        // Query assignments where department matches student's department
         const q = query(
             collection(db, "assignments"), 
             where("department", "==", studentData.department)
@@ -896,13 +898,13 @@ async function loadAssignments() {
 
         container.innerHTML = "";
         
-        // Sort newest first manually if createdAt is a timestamp
-        const sortedDocs = snap.docs.sort((a, b) => b.data().createdAt?.seconds - a.data().createdAt?.seconds);
+        // Sort: Newest created first
+        const sortedDocs = snap.docs.sort((a, b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0));
 
         sortedDocs.forEach(docSnap => {
             const task = docSnap.data();
             const deadlineDate = new Date(task.deadline);
-            const isOverdue = deadlineDate < new Date();
+            const isOverdue = deadlineDate < new Date() && task.deadline !== "";
 
             container.innerHTML += `
                 <div class="card animate-in" style="border-left: 6px solid ${isOverdue ? 'var(--red)' : 'var(--accent)'}; padding: 20px; margin-bottom: 15px; background: #fcfdfe;">
@@ -918,13 +920,13 @@ async function loadAssignments() {
                             <div style="display:flex; align-items:center; gap:5px; margin-top:10px;">
                                 <i data-lucide="calendar" size="14" style="color:${isOverdue ? 'var(--red)' : 'var(--orange)'}"></i>
                                 <small style="font-weight:700; color:${isOverdue ? 'var(--red)' : 'var(--orange)'}">
-                                    Deadline: ${task.deadline} ${isOverdue ? '(Passed)' : ''}
+                                    Deadline: ${task.deadline} ${isOverdue ? '(Overdue)' : ''}
                                 </small>
                             </div>
                         </div>
                         <div style="margin-left: 20px;">
                             <a href="${task.link}" target="_blank" class="action-btn" style="text-decoration:none; display:inline-block; padding:10px 20px; font-size:13px;">
-                                Open Task
+                                View Task
                             </a>
                         </div>
                     </div>
@@ -933,8 +935,8 @@ async function loadAssignments() {
         
         lucide.createIcons();
     } catch (error) {
-        console.error("Error loading assignments:", error);
-        container.innerHTML = "<p class='text-muted'>Failed to load assignments. Please try again later.</p>";
+        console.error("Assignment Load Error:", error);
+        container.innerHTML = "<p class='text-muted'>Error loading assignments.</p>";
     }
 }
 </script>
