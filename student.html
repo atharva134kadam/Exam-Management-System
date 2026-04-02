@@ -1081,9 +1081,7 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
   </div>
 
   <div id="exams" class="section-content">
-    <div id="hallTicketContainer">
-        
-    </div>
+    <div id="hallTicketContainer"></div>
     <div class="card">
       <h3 style="margin:0 0 20px 0; display:flex; align-items:center; gap:10px;"><i data-lucide="monitor" class="text-accent"></i> Online Proctored Assessments</h3>
       <div id="onlineExams"></div>
@@ -1096,6 +1094,21 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
             <tbody id="offlineTableBody"></tbody>
           </table>
       </div>
+    </div>
+  </div>
+
+  <div id="assignments" class="section-content">
+    <div class="card">
+        <h3 style="margin:0 0 10px 0;">Academic Assignments</h3>
+        <p style="color:var(--muted); font-size:13px; margin-bottom:25px;">
+          View and access assignments posted by your department faculty.
+        </p>
+        <div id="assignmentList">
+            <div style="text-align:center; padding:40px; color:var(--muted)">
+                <div class="loader"></div>
+                <p>Loading your assignments...</p>
+            </div>
+        </div>
     </div>
   </div>
 
@@ -1113,61 +1126,34 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
       <select id="grievanceExamSelect" style="margin-bottom:15px;"></select>
       <select id="grievanceReason" style="margin-bottom:15px;">
           <option value="Marks Mismatch">Marks Mismatch</option>
-    <option value="Seating Issue">Seating Allocation Error</option>
-    <option value="Result Not Published">Result Not Published</option>
-    <option value="Absent Marked Present Issue">Absent/Present Status Error</option>
-    <option value="Internal Marks Issue">Internal Marks Discrepancy</option>
-    <option value="Question Evaluation Issue">Specific Question Evaluation Issue</option>
-    <option value="Wrong Subject Assigned">Wrong Subject Assigned</option>
-    <option value="Technical Issue During Exam">Technical Issue During Online Exam</option>
+          <option value="Seating Issue">Seating Allocation Error</option>
+          <option value="Result Not Published">Result Not Published</option>
+          <option value="Absent Marked Present Issue">Absent/Present Status Error</option>
+          <option value="Internal Marks Issue">Internal Marks Discrepancy</option>
+          <option value="Question Evaluation Issue">Specific Question Evaluation Issue</option>
+          <option value="Wrong Subject Assigned">Wrong Subject Assigned</option>
+          <option value="Technical Issue During Exam">Technical Issue During Online Exam</option>
       </select>
       <textarea id="grievanceDetails" rows="4" placeholder="Describe your concern..."></textarea>
       <button class="action-btn w-100" style="margin-top:25px;" onclick="submitGrievance()">Submit Dispute Ticket</button>
     </div>
     <div id="grievanceHistory" class="mt-20"></div>
   </div>
-</div>
 
-<div id="reevaluation" class="section-content">
-  <div class="card">
-    <h3 style="margin:0;">Apply for Re-Evaluation</h3>
-    <p style="color:var(--muted); font-size:13px; margin:10px 0 25px 0;">
-      Request re-checking of evaluated answer sheets.
-    </p>
-
-    <input type="text" id="reevalName" readonly style="margin-bottom:15px;" />
-
-    <select id="reevalSubjectSelect" style="margin-bottom:15px;">
-      <option value="">Select Published Subject</option>
-    </select>
-
-    <textarea id="reevalReason" rows="4" placeholder="Enter reason for re-evaluation..."></textarea>
-
-    <button class="action-btn w-100" style="margin-top:25px;" onclick="submitReevaluation()">
-      Submit Re-Evaluation Request
-    </button>
+  <div id="reevaluation" class="section-content">
+    <div class="card">
+      <h3 style="margin:0;">Apply for Re-Evaluation</h3>
+      <p style="color:var(--muted); font-size:13px; margin:10px 0 25px 0;">Request re-checking of evaluated answer sheets.</p>
+      <input type="text" id="reevalName" readonly style="margin-bottom:15px;" />
+      <select id="reevalSubjectSelect" style="margin-bottom:15px;">
+        <option value="">Select Published Subject</option>
+      </select>
+      <textarea id="reevalReason" rows="4" placeholder="Enter reason for re-evaluation..."></textarea>
+      <button class="action-btn w-100" style="margin-top:25px;" onclick="submitReevaluation()">Submit Request</button>
+    </div>
+    <div id="reevalHistory" class="mt-20"></div>
   </div>
-
-  <div id="reevalHistory" class="mt-20"></div>
-</div>
-
-<div id="assignments" class="section-content">
-  <div class="card">
-      <h3 style="margin:0 0 10px 0;">Academic Assignments</h3>
-      <p style="color:var(--muted); font-size:13px; margin-bottom:25px;">
-        View and access assignments posted by your department faculty.
-      </p>
-      
-      <div id="assignmentList">
-          <div style="text-align:center; padding:40px; color:var(--muted)">
-              <div class="loader"></div>
-              <p>Fetching assignments for ${studentData.department}...</p>
-          </div>
-      </div>
-  </div>
-</div>
-
-<div id="examPortal" class="exam-portal"></div>
+</div> <div id="examPortal" class="exam-portal"></div>
 <script>lucide.createIcons();</script>
 </body>
 </html>
