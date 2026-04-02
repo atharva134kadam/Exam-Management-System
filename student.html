@@ -854,6 +854,89 @@ function formatTime(seconds) {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 window.logoutUser = () => signOut(auth).then(() => window.location.href = "index.html");
+
+async function loadDashboardData() {
+    const respQuery = query(collection(db, "responses"), where("studentId", "==", auth.currentUser.uid));
+    const respSnap = await getDocs(respQuery);
+    const takenIds = respSnap.docs.map(d => d.data().examId);
+    
+    await Promise.all([
+        loadExams(takenIds),
+        loadPublishedResults(),
+        loadGrievanceOptions(),
+        loadExistingGrievances(),
+        loadReevaluationSubjects(),
+        loadReevaluationHistory(),
+        loadHallTicket(),
+        loadAssignments() // 👈 ADD THIS LINE
+    ]);
+}
+
+async function loadAssignments() {
+    const container = document.getElementById("assignmentList");
+    
+    try {
+        // Query assignments where department matches student's department
+        const q = query(
+            collection(db, "assignments"), 
+            where("department", "==", studentData.department)
+        );
+        
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+            container.innerHTML = `
+                <div style="text-align:center; padding:40px; background:var(--bg); border-radius:20px;">
+                    <i data-lucide="package-open" size="40" style="color:var(--muted); margin-bottom:10px;"></i>
+                    <p style="color:var(--muted);">No assignments found for ${studentData.department} Department.</p>
+                </div>`;
+            lucide.createIcons();
+            return;
+        }
+
+        container.innerHTML = "";
+        
+        // Sort newest first manually if createdAt is a timestamp
+        const sortedDocs = snap.docs.sort((a, b) => b.data().createdAt?.seconds - a.data().createdAt?.seconds);
+
+        sortedDocs.forEach(docSnap => {
+            const task = docSnap.data();
+            const deadlineDate = new Date(task.deadline);
+            const isOverdue = deadlineDate < new Date();
+
+            container.innerHTML += `
+                <div class="card animate-in" style="border-left: 6px solid ${isOverdue ? 'var(--red)' : 'var(--accent)'}; padding: 20px; margin-bottom: 15px; background: #fcfdfe;">
+                    <div class="flex-between">
+                        <div style="flex: 1;">
+                            <div class="flex-between">
+                                <h4 class="m-0" style="color:var(--primary);">${task.title}</h4>
+                                <span class="badge-blue" style="font-size:10px; padding:4px 10px;">Sem ${task.semester}</span>
+                            </div>
+                            <p style="font-size: 13px; color: var(--muted); margin: 5px 0;">
+                                <b>Subject:</b> ${task.subject} | <b>Faculty:</b> ${task.facultyName}
+                            </p>
+                            <div style="display:flex; align-items:center; gap:5px; margin-top:10px;">
+                                <i data-lucide="calendar" size="14" style="color:${isOverdue ? 'var(--red)' : 'var(--orange)'}"></i>
+                                <small style="font-weight:700; color:${isOverdue ? 'var(--red)' : 'var(--orange)'}">
+                                    Deadline: ${task.deadline} ${isOverdue ? '(Passed)' : ''}
+                                </small>
+                            </div>
+                        </div>
+                        <div style="margin-left: 20px;">
+                            <a href="${task.link}" target="_blank" class="action-btn" style="text-decoration:none; display:inline-block; padding:10px 20px; font-size:13px;">
+                                Open Task
+                            </a>
+                        </div>
+                    </div>
+                </div>`;
+        });
+        
+        lucide.createIcons();
+    } catch (error) {
+        console.error("Error loading assignments:", error);
+        container.innerHTML = "<p class='text-muted'>Failed to load assignments. Please try again later.</p>";
+    }
+}
 </script>
 
 <style>
@@ -923,6 +1006,26 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
     border: 1px solid var(--border);
 }
 @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+
+.badge-blue {
+    background: #dbeafe;
+    color: var(--accent);
+    border-radius: 8px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+/* Optional: Loading spinner */
+.loader {
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid var(--accent);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 10px auto;
+}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -951,12 +1054,11 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
 
 <div class="tabs-container">
   <button class="tab-item active-tab" onclick="showSection('portfolio', this)"><i data-lucide="user-circle"></i> Portfolio</button>
-  <button class="tab-item active-tab" onclick="showSection('exams', this)"><i data-lucide="calendar"></i> Examinations</button>
-  <button class="tab-item active-tab" onclick="showSection('results', this)"><i data-lucide="award"></i> Results</button>
-  <button class="tab-item active-tab" onclick="showSection('grievance', this)"><i data-lucide="help-circle"></i> Help Desk</button>
-  <button class="tab-item active-tab" onclick="showSection('reevaluation', this)">
-  <i data-lucide="refresh-cw"></i> Re-Evaluation
-</button>
+  <button class="tab-item" onclick="showSection('exams', this)"><i data-lucide="calendar"></i> Examinations</button>
+  <button class="tab-item" onclick="showSection('assignments', this)"><i data-lucide="clipboard-list"></i> Assignments</button>
+  <button class="tab-item" onclick="showSection('results', this)"><i data-lucide="award"></i> Results</button>
+  <button class="tab-item" onclick="showSection('grievance', this)"><i data-lucide="help-circle"></i> Help Desk</button>
+  <button class="tab-item" onclick="showSection('reevaluation', this)"><i data-lucide="refresh-cw"></i> Re-Evaluation</button>
 </div>
 
 <div class="main-content">
@@ -1047,6 +1149,22 @@ select, textarea { width: 100%; padding: 14px; border-radius: 14px; border: 1px 
   </div>
 
   <div id="reevalHistory" class="mt-20"></div>
+</div>
+
+<div id="assignments" class="section-content">
+  <div class="card">
+      <h3 style="margin:0 0 10px 0;">Academic Assignments</h3>
+      <p style="color:var(--muted); font-size:13px; margin-bottom:25px;">
+        View and access assignments posted by your department faculty.
+      </p>
+      
+      <div id="assignmentList">
+          <div style="text-align:center; padding:40px; color:var(--muted)">
+              <div class="loader"></div>
+              <p>Fetching assignments for ${studentData.department}...</p>
+          </div>
+      </div>
+  </div>
 </div>
 
 <div id="examPortal" class="exam-portal"></div>
