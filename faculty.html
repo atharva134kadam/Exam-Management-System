@@ -956,7 +956,6 @@ input, select, textarea { width: 100%; padding: 14px; margin-top: 10px; border-r
 
 <div class="tabs-container">
   <button class="tab-item" onclick="showSection('dashboard')"><i data-lucide="layout-dashboard"></i> Home</button>
-  <button class="tab-item" onclick="showSection('students')"><i data-lucide="users"></i> Students</button>
   <button class="tab-item" onclick="showSection('exams')"><i data-lucide="plus-circle"></i> Exam Management</button>
   <button class="tab-item" onclick="showSection('results')"><i data-lucide="award"></i> Results</button>
   <button class="tab-item" onclick="showSection('grievance')"><i data-lucide="alert-circle"></i> Grievance</button>
@@ -967,9 +966,28 @@ input, select, textarea { width: 100%; padding: 14px; margin-top: 10px; border-r
 
 <div class="main-content">
   <div id="dashboard" class="section-content">
-    <h3 class="m-0 mb-20">Academic Pulse</h3>
-    <div id="examList"></div>
+
+  <h3 class="m-0 mb-20">Student Management</h3>
+
+  <div class="resp-grid">
+    
+    <!-- LEFT: STUDENT LIST -->
+    <div>
+      <h3>Department Students</h3>
+      <div id="studentsDirectory"></div>
+    </div>
+
+    <!-- RIGHT: STUDENT DETAILS -->
+    <div id="studentDetailView">
+      <div class="card" style="text-align:center; padding:50px; color:var(--muted)">
+        <i data-lucide="user-search" size="40"></i>
+        <p>Select student to view details.</p>
+      </div>
+    </div>
+
   </div>
+
+</div>
 
   <div id="students" class="section-content">
     <div class="resp-grid">
