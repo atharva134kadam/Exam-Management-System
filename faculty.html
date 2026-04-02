@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>EduSmart 360 | Faculty Portal</title>
+  <title>EduSmart 360 | Faculty Dashboard</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/lucide@latest"></script>
@@ -625,10 +625,15 @@ window.generateQuestionFields = function() {
                     <b>Question ${i}</b>
                 </div>
                 <input type="number" 
-                       min="0" 
-                       placeholder="Enter marks for Question ${i}"
-                       class="individual-mark"
-                       oninput="calculateLiveTotal()">
+       min="0" 
+       placeholder="Enter marks for Question ${i}"
+       class="individual-mark"
+       oninput="calculateLiveTotal()">
+
+<textarea 
+       class="question-comment"
+       placeholder="Add comment for Question ${i}"
+       style="margin-top:10px; height:60px;"></textarea>
             </div>
         `;
     }
@@ -675,16 +680,21 @@ window.publishExamResult = async function() {
         return;
     }
 
-    inputs.forEach((input, index) => {
-        const mark = Number(input.value) || 0;
+    const comments = document.querySelectorAll(".question-comment");
 
-        breakdown.push({
-            questionNumber: index + 1,
-            marks: mark
-        });
+inputs.forEach((input, index) => {
 
-        total += mark;
+    const mark = Number(input.value) || 0;
+    const comment = comments[index]?.value?.trim() || "";
+
+    breakdown.push({
+        questionNumber: index + 1,
+        marks: mark,
+        comment: comment
     });
+
+    total += mark;
+});
 
     try {
 
@@ -824,20 +834,25 @@ window.onExamChangeResults = function() {
             }
 
             container.innerHTML += `
-                <div class="q-mark-card">
-                    <div class="flex-between">
-                        <b>Question ${index + 1}</b>
-                        <span class="badge-blue">${q.marks} Max</span>
-                    </div>
+    <div class="q-mark-card">
+        <div class="flex-between">
+            <b>Question ${index + 1}</b>
+            <span class="badge-blue">${q.marks} Max</span>
+        </div>
 
-                    <p style="margin-top:8px">${q.text}</p>
+        <p style="margin-top:8px">${q.text}</p>
 
-                    <select class="individual-mark"
-                            onchange="calculateLiveTotal()">
-                        ${options}
-                    </select>
-                </div>
-            `;
+        <select class="individual-mark"
+                onchange="calculateLiveTotal()">
+            ${options}
+        </select>
+
+        <textarea 
+            class="question-comment"
+            placeholder="Add comment for this question..."
+            style="margin-top:10px; height:60px;"></textarea>
+    </div>
+`;
         });
     }
 
@@ -936,7 +951,7 @@ input, select, textarea { width: 100%; padding: 14px; margin-top: 10px; border-r
 </nav>
 
 <header class="welcome-card">
-  <div><h1 class="m-0" style="font-size:32px;">Faculty Intelligence</h1><p id="facultyEmail" style="color:var(--muted); margin-top:10px;">--</p></div>
+  <div><h1 class="m-0" style="font-size:32px;">Faculty Dashboard</h1><p id="facultyEmail" style="color:var(--muted); margin-top:10px;">--</p></div>
   <div class="stats-box">
     <div class="stat-item" style="text-align:center"><h3><span id="statExams">0</span></h3><small style="opacity:0.7">Records</small></div>
     <div class="stat-item" style="text-align:center"><h3><span id="statGrievances">0</span></h3><small style="opacity:0.7">Tickets</small></div>
