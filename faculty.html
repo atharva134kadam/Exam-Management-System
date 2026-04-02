@@ -5,13 +5,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/lucide@latest"></script>
-
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+ 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, updateDoc, setDoc, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
-
+ 
 const firebaseConfig = {
   apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
   authDomain: "admin-management-db779.firebaseapp.com",
@@ -21,1110 +23,1321 @@ const firebaseConfig = {
   appId: "1:144412069580:web:52670196ee40c687ddbc69",
   measurementId: "G-HY31FECMSB"
 };
-
+ 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-
+ 
 let facultyUID = "";
 let facultyDept = "";
 let examQuestions = [];
 let offlineScheduleRows = [];
 let allStudents = [];
 let allExams = [];
-
+let selectedStudent = null;
+ 
 /* ================= AUTH & INITIALIZATION ================= */
 onAuthStateChanged(auth, async (user) => {
   if (!user) return location.href = "index.html";
   facultyUID = user.uid;
-  
+ 
   const facultyDoc = await getDoc(doc(db, "users", user.uid));
   if (!facultyDoc.exists() || facultyDoc.data().role !== "faculty") return location.href = "index.html";
-  
+ 
   const data = facultyDoc.data();
   facultyDept = data.department;
-  
+ 
   document.querySelectorAll(".u-name").forEach(el => el.innerText = data.name);
   document.getElementById("u-dept-sub").innerText = facultyDept + " Faculty";
   document.getElementById("u-initials").innerText = data.name.split(' ').map(n => n[0]).join('').toUpperCase();
   document.getElementById("facultyEmail").innerText = user.email;
-
+ 
   await refreshDashboard();
-  await showSection('dashboard'); 
+  await showSection('dashboard');
 });
-
+ 
 async function refreshDashboard() {
-    await loadDashboardStats();
-    await loadCreatedExams();
-    await loadGrievances();
-    await loadOfflineExamsForSlots();
-    await loadSubjectsForHallTicket();
-    await loadDataForResultPublishing();
-    lucide.createIcons();
-    await loadReevaluationRequests();
+  await loadDashboardStats();
+  await loadCreatedExams();
+  await loadGrievances();
+  await loadOfflineExamsForSlots();
+  await loadSubjectsForHallTicket();
+  await loadDataForResultPublishing();
+  await loadReevaluationRequests();
+  lucide.createIcons();
 }
-
+ 
 /* ================= NAVIGATION ================= */
 window.showSection = async function(id) {
   document.querySelectorAll(".section-content").forEach(sec => sec.classList.remove("active"));
-  
+ 
   const target = document.getElementById(id);
-  if(target) target.classList.add("active");
-
+  if (target) target.classList.add("active");
+ 
   document.querySelectorAll(".tab-item").forEach(tab => {
-      tab.classList.remove("active-tab");
-      if(tab.getAttribute('onclick')?.includes(`'${id}'`)) tab.classList.add("active-tab");
+    tab.classList.remove("active-tab");
+    if (tab.getAttribute('onclick')?.includes(`'${id}'`)) tab.classList.add("active-tab");
   });
-
-  // 🔥 KEY LINE (THIS FIXES EVERYTHING)
-  if(id === "dashboard") {
-      await loadStudents();
+ 
+  if (id === "dashboard") {
+    // Don't auto-load students; they load via button
   }
-
+ 
   lucide.createIcons();
 };
-
+ 
 window.switchBuilderType = function(type) {
-    document.getElementById('onlineBuilderArea').style.display = type === 'online' ? 'grid' : 'none';
-    document.getElementById('offlineBuilderArea').style.display = type === 'offline' ? 'grid' : 'none';
-    document.getElementById('slotGeneratorArea').style.display = type === 'slots' ? 'block' : 'none';
-    document.getElementById('hallTicketArea').style.display = type === 'hallticket' ? 'block' : 'none';
-    document.querySelectorAll('.b-type-btn').forEach(btn => btn.classList.remove('active-b'));
-    event.currentTarget.classList.add('active-b');
-    lucide.createIcons();
+  document.getElementById('onlineBuilderArea').style.display = type === 'online' ? 'grid' : 'none';
+  document.getElementById('offlineBuilderArea').style.display = type === 'offline' ? 'grid' : 'none';
+  document.getElementById('slotGeneratorArea').style.display = type === 'slots' ? 'block' : 'none';
+  document.getElementById('hallTicketArea').style.display = type === 'hallticket' ? 'block' : 'none';
+  document.querySelectorAll('.b-type-btn').forEach(btn => btn.classList.remove('active-b'));
+  event.currentTarget.classList.add('active-b');
+  lucide.createIcons();
 };
-
+ 
 /* ================= 1. STUDENT MANAGEMENT & HISTORY ================= */
+window.openStudentManagement = async function() {
+  document.getElementById("studentManagementPanel").style.display = "block";
+  document.getElementById("studentDetailView").innerHTML = `
+    <div class="card" style="text-align:center; padding:50px; color:var(--muted)">
+      <i data-lucide="user-search" size="40"></i>
+      <p>Select a student to view details.</p>
+    </div>`;
+  await loadStudents();
+  lucide.createIcons();
+};
+ 
+window.closeStudentManagement = function() {
+  document.getElementById("studentManagementPanel").style.display = "none";
+};
+ 
 async function loadStudents() {
-    const container = document.getElementById("studentsDirectory");
-    const q = query(collection(db, "users"), where("role", "==", "student"), where("department", "==", facultyDept));
-    const snap = await getDocs(q);
-    allStudents = [];
-    container.innerHTML = "";
-    snap.forEach(docSnap => {
-        const s = docSnap.data(); s.uid = docSnap.id;
-        allStudents.push(s);
-        container.innerHTML += `
-            <div class="card list-item clickable h-item" onclick="viewStudentDetails('${s.prn}')">
-                <div class="item-main">
-                    <div class="avatar-sm">${s.name[0].toUpperCase()}</div>
-                    <div><h4 class="m-0">${s.name}</h4><small>PRN: ${s.prn}</small></div>
-                </div>
-                <i data-lucide="chevron-right"></i>
-            </div>`;
-    });
+  const container = document.getElementById("studentsDirectory");
+  container.innerHTML = "<p style='color:var(--muted); font-size:13px;'>Loading...</p>";
+  const q = query(collection(db, "users"), where("role", "==", "student"), where("department", "==", facultyDept));
+  const snap = await getDocs(q);
+  allStudents = [];
+  container.innerHTML = "";
+ 
+  if (snap.empty) {
+    container.innerHTML = "<p class='empty-msg'>No students found.</p>";
+    return;
+  }
+ 
+  snap.forEach(docSnap => {
+    const s = docSnap.data();
+    s.uid = docSnap.id;
+    allStudents.push(s);
+    container.innerHTML += `
+      <div class="card list-item clickable h-item" onclick="viewStudentDetails('${s.prn}')">
+        <div class="item-main">
+          <div class="avatar-sm">${s.name[0].toUpperCase()}</div>
+          <div><h4 class="m-0">${s.name}</h4><small>PRN: ${s.prn}</small></div>
+        </div>
+        <i data-lucide="chevron-right"></i>
+      </div>`;
+  });
+  lucide.createIcons();
 }
-
+ 
 window.viewStudentDetails = function(prn) {
-    const s = allStudents.find(std => std.prn === prn);
-    const detailBox = document.getElementById("studentDetailView");
-    detailBox.innerHTML = `
-        <div class="card profile-accent animate-in">
-            <h3 class="m-0">${s.name}</h3>
-            <div class="info-grid">
-                <div class="info-group"><label>PRN</label><p>${s.prn}</p></div>
-                <div class="info-group"><label>Batch</label><p>${s.batch}</p></div>
-                <div class="info-group"><label>Email</label><p>${s.email}</p></div>
-                <div class="info-group"><label>Dept</label><p>${s.department}</p></div>
-            </div>
-            <button class="action-btn w-100 mt-20" onclick="activateRecordViewer('${s.uid}', '${s.name}')">Audit Academic History</button>
-        </div>`;
-    lucide.createIcons();
+  const s = allStudents.find(std => std.prn === prn);
+  if (!s) return;
+  const detailBox = document.getElementById("studentDetailView");
+  detailBox.innerHTML = `
+    <div class="card profile-accent animate-in">
+      <h3 class="m-0">${s.name}</h3>
+      <div class="info-grid">
+        <div class="info-group"><label>PRN</label><p>${s.prn}</p></div>
+        <div class="info-group"><label>Batch</label><p>${s.batch || '--'}</p></div>
+        <div class="info-group"><label>Email</label><p>${s.email || '--'}</p></div>
+        <div class="info-group"><label>Dept</label><p>${s.department}</p></div>
+      </div>
+      <button class="action-btn w-100 mt-20" onclick="activateRecordViewer('${s.uid}', '${s.name}')">Audit Academic History</button>
+    </div>`;
+  lucide.createIcons();
 };
-
+ 
 window.activateRecordViewer = async function(uid, name) {
-    const viewer = document.getElementById("recordViewerModal");
-    const container = document.getElementById("recordsContainer");
-    viewer.style.display = "flex";
-    container.innerHTML = "<div class='loader'>Loading records...</div>";
-    
-    const q = query(collection(db, "responses"), where("studentId", "==", uid));
-    const snap = await getDocs(q);
-    document.getElementById("v-student-name").innerText = name + "'s Academic History";
-    container.innerHTML = snap.empty ? "<p class='text-muted'>No exam history found.</p>" : "";
-    
-    for (const d of snap.docs) {
-        const r = d.data();
-        const examDoc = await getDoc(doc(db, "exams", r.examId));
-        const examTitle = examDoc.exists() ? examDoc.data().title : "Archived Exam";
-        const totalMarks = examDoc.exists() ? examDoc.data().totalMarks : "--";
-
-        container.innerHTML += `
-            <div class="history-item-card">
-                <div class="flex-between">
-                    <div><div class="history-title">${examTitle}</div><small class="text-muted">Submitted: ${r.submittedAt?.toDate().toLocaleDateString()}</small></div>
-                    <div class="history-score"><span>${r.autoScore}</span> / ${totalMarks}</div>
-                </div>
-                <div class="history-meta">
-                    <span class="meta-tag ${r.warnings > 0 ? 'bad' : 'good'}"><i data-lucide="${r.warnings > 0 ? 'alert-octagon' : 'shield-check'}" size="12"></i>Warnings: ${r.warnings}</span>
-                </div>
-            </div>`;
-    }
-    lucide.createIcons();
+  const viewer = document.getElementById("recordViewerModal");
+  const container = document.getElementById("recordsContainer");
+  viewer.style.display = "flex";
+  container.innerHTML = "<div class='loader'>Loading records...</div>";
+ 
+  const q = query(collection(db, "responses"), where("studentId", "==", uid));
+  const snap = await getDocs(q);
+  document.getElementById("v-student-name").innerText = name + "'s Academic History";
+  container.innerHTML = snap.empty ? "<p class='text-muted'>No exam history found.</p>" : "";
+ 
+  for (const d of snap.docs) {
+    const r = d.data();
+    const examDoc = await getDoc(doc(db, "exams", r.examId));
+    const examTitle = examDoc.exists() ? examDoc.data().title : "Archived Exam";
+    const totalMarks = examDoc.exists() ? examDoc.data().totalMarks : "--";
+ 
+    container.innerHTML += `
+      <div class="history-item-card">
+        <div class="flex-between">
+          <div>
+            <div class="history-title">${examTitle}</div>
+            <small class="text-muted">Submitted: ${r.submittedAt?.toDate().toLocaleDateString()}</small>
+          </div>
+          <div class="history-score"><span>${r.autoScore}</span> / ${totalMarks}</div>
+        </div>
+        <div class="history-meta">
+          <span class="meta-tag ${r.warnings > 0 ? 'bad' : 'good'}">
+            <i data-lucide="${r.warnings > 0 ? 'alert-octagon' : 'shield-check'}" size="12"></i>
+            Warnings: ${r.warnings}
+          </span>
+        </div>
+      </div>`;
+  }
+  lucide.createIcons();
 };
-
+ 
 /* ================= 2. BUILDER ENGINE ================= */
 window.toggleQuestionType = function() {
-    const type = document.getElementById('qType').value;
-    document.getElementById('mcqOptionsContainer').style.display = type === 'mcq' ? 'block' : 'none';
+  const type = document.getElementById('qType').value;
+  document.getElementById('mcqOptionsContainer').style.display = type === 'mcq' ? 'block' : 'none';
 };
-
+ 
 window.addQuestion = function() {
-    const qText = document.getElementById('qText').value;
-    const qType = document.getElementById('qType').value;
-    const qMarks = Number(document.getElementById('qMaxMarks').value);
-    if (!qText || !qMarks) return alert("Fill question details");
-    let qObj = { id: Date.now(), text: qText, type: qType, marks: qMarks };
-    if (qType === 'mcq') {
-        const opts = [opt1.value, opt2.value, opt3.value, opt4.value];
-        if (opts.some(o => !o) || correctOpt.value === "") return alert("Complete all 4 options");
-        qObj.options = opts; qObj.correctAnswer = Number(correctOpt.value);
-    }
-    examQuestions.push(qObj);
-    renderOnlinePreview();
-    document.getElementById('qText').value = "";
+  const qText = document.getElementById('qText').value;
+  const qType = document.getElementById('qType').value;
+  const qMarks = Number(document.getElementById('qMaxMarks').value);
+  if (!qText || !qMarks) return alert("Fill question details");
+  let qObj = { id: Date.now(), text: qText, type: qType, marks: qMarks };
+  if (qType === 'mcq') {
+    const opts = [
+      document.getElementById('opt1').value,
+      document.getElementById('opt2').value,
+      document.getElementById('opt3').value,
+      document.getElementById('opt4').value
+    ];
+    const correctVal = document.getElementById('correctOpt').value;
+    if (opts.some(o => !o) || correctVal === "") return alert("Complete all 4 options and select correct answer");
+    qObj.options = opts;
+    qObj.correctAnswer = Number(correctVal);
+  }
+  examQuestions.push(qObj);
+  renderOnlinePreview();
+  document.getElementById('qText').value = "";
 };
-
+ 
 function renderOnlinePreview() {
-    const container = document.getElementById('livePreview');
-    container.innerHTML = examQuestions.map((q, i) => `<div class="card preview-item"><b>Q${i+1}. ${q.text}</b> (${q.marks}M)</div>`).join("");
-    document.getElementById('runningTotal').innerText = examQuestions.reduce((s, q) => s + q.marks, 0);
+  const container = document.getElementById('livePreview');
+  container.innerHTML = examQuestions.map((q, i) => `<div class="card preview-item"><b>Q${i + 1}. ${q.text}</b> (${q.marks}M)</div>`).join("");
+  document.getElementById('runningTotal').innerText = examQuestions.reduce((s, q) => s + q.marks, 0);
 }
-
+ 
 window.publishOnlineExam = async function() {
-    const title = document.getElementById('eTitle').value;
-    const date = document.getElementById('eDate').value;
-    if(!title || !date || examQuestions.length === 0) return alert("Incomplete Config");
-    await addDoc(collection(db, "exams"), {
-        title, date, questions: examQuestions, type: 'online', totalMarks: examQuestions.reduce((s, q) => s + q.marks, 0),
-        department: facultyDept, createdBy: facultyUID, createdAt: serverTimestamp()
-    });
-    alert("Exam Published!"); location.reload();
+  const title = document.getElementById('eTitle').value;
+  const date = document.getElementById('eDate').value;
+  if (!title || !date || examQuestions.length === 0) return alert("Incomplete Config");
+  await addDoc(collection(db, "exams"), {
+    title, date, questions: examQuestions, type: 'online',
+    totalMarks: examQuestions.reduce((s, q) => s + q.marks, 0),
+    department: facultyDept, createdBy: facultyUID, createdAt: serverTimestamp()
+  });
+  alert("Exam Published!");
+  location.reload();
 };
-
+ 
 window.addScheduleRow = function() {
-    const subject = document.getElementById('offTitle').value;
-    const date = document.getElementById('offDate').value;
-    const time = document.getElementById('offTime').value;
-    const marks = document.getElementById('offMarks').value;
-    if(!subject || !date || !time) return alert("Fill entry");
-    offlineScheduleRows.push({ id: Date.now(), subject, date, time, marks });
-    document.getElementById('offTitle').value = ""; renderOfflineTable();
+  const subject = document.getElementById('offTitle').value;
+  const date = document.getElementById('offDate').value;
+  const time = document.getElementById('offTime').value;
+  const marks = document.getElementById('offMarks').value;
+  if (!subject || !date || !time) return alert("Fill entry");
+  offlineScheduleRows.push({ id: Date.now(), subject, date, time, marks });
+  document.getElementById('offTitle').value = "";
+  renderOfflineTable();
 };
-
+ 
 function renderOfflineTable() {
-    const container = document.getElementById('offlineTableBody');
-    container.innerHTML = offlineScheduleRows.map((r, i) => `<tr><td>${i+1}</td><td><b>${r.subject}</b></td><td>${r.marks}M</td><td><button onclick="removeScheduleRow(${r.id})" class="btn-icon red"><i data-lucide="trash-2"></i></button></td></tr>`).join("");
-    lucide.createIcons();
+  const container = document.getElementById('offlineTableBody');
+  container.innerHTML = offlineScheduleRows.map((r, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><b>${r.subject}</b></td>
+      <td>${r.marks}M</td>
+      <td><button onclick="removeScheduleRow(${r.id})" class="btn-icon red"><i data-lucide="trash-2"></i></button></td>
+    </tr>`).join("");
+  lucide.createIcons();
 }
-
-window.removeScheduleRow = (id) => { offlineScheduleRows = offlineScheduleRows.filter(r => r.id !== id); renderOfflineTable(); };
-
-window.publishFullTimeTable = async function() {
-    const name = document.getElementById('offTableName').value;
-    if(!name || offlineScheduleRows.length === 0) return alert("Draft empty");
-    for (const row of offlineScheduleRows) {
-        await addDoc(collection(db, "exams"), {
-            title: row.subject, date: row.date, time: row.time, totalMarks: Number(row.marks), type: 'offline', scheduleGroup: name, department: facultyDept, createdBy: facultyUID, createdAt: serverTimestamp()
-        });
-    }
-    alert("Time Table Published!"); refreshDashboard();
+ 
+window.removeScheduleRow = (id) => {
+  offlineScheduleRows = offlineScheduleRows.filter(r => r.id !== id);
+  renderOfflineTable();
 };
-
+ 
+window.publishFullTimeTable = async function() {
+  const name = document.getElementById('offTableName').value;
+  if (!name || offlineScheduleRows.length === 0) return alert("Draft empty");
+  for (const row of offlineScheduleRows) {
+    await addDoc(collection(db, "exams"), {
+      title: row.subject, date: row.date, time: row.time,
+      totalMarks: Number(row.marks), type: 'offline',
+      scheduleGroup: name, department: facultyDept,
+      createdBy: facultyUID, createdAt: serverTimestamp()
+    });
+  }
+  alert("Time Table Published!");
+  refreshDashboard();
+};
+ 
 /* ================= 3. SLOT GENERATOR ================= */
 async function loadOfflineExamsForSlots() {
-    const select = document.getElementById("slotExamSelect");
-    const q = query(collection(db, "exams"), where("department", "==", facultyDept), where("type", "==", "offline"));
-    const snap = await getDocs(q);
-    select.innerHTML = '<option value="">-- Choose Exam --</option>';
-    snap.forEach(d => { select.innerHTML += `<option value="${d.id}">${d.data().title}</option>`; });
+  const select = document.getElementById("slotExamSelect");
+  const q = query(collection(db, "exams"), where("department", "==", facultyDept), where("type", "==", "offline"));
+  const snap = await getDocs(q);
+  select.innerHTML = '<option value="">-- Choose Exam --</option>';
+  snap.forEach(d => {
+    select.innerHTML += `<option value="${d.id}">${d.data().title}</option>`;
+  });
 }
-
+ 
 window.generateSlots = async function() {
-    const examId = document.getElementById("slotExamSelect").value;
-    const classroom = document.getElementById("classroomName").value;
-    const strength = parseInt(document.getElementById("classStrength").value);
-    const interval = parseInt(document.getElementById("slotInterval").value);
-    if(!examId || !classroom || isNaN(strength)) return alert("Missing Info");
-
-    const examDoc = await getDoc(doc(db, "exams", examId));
-    const baseTime = examDoc.data().time;
-    const shuffled = [...allStudents].sort(() => 0.5 - Math.random());
-    
-    let slotData = [];
-    for (let i = 0, sNum = 1; i < shuffled.length; i += strength, sNum++) {
-        const batch = shuffled.slice(i, i + strength);
-        const stime = calcTime(baseTime, (sNum-1)*interval);
-        let benches = Array.from({length: strength}, (_, idx) => idx + 1).sort(() => 0.5 - Math.random());
-        batch.forEach((std, idx) => {
-            slotData.push({ studentId: std.uid, studentName: std.name, prn: std.prn, examId, examTitle: examDoc.data().title, classroom, slotNumber: sNum, slotTime: stime, benchNumber: benches[idx] });
-        });
-    }
-    const fbBatch = writeBatch(db);
-    slotData.forEach(item => { const ref = doc(collection(db, "exam_slots")); fbBatch.set(ref, { ...item, department: facultyDept, createdAt: serverTimestamp() }); });
-    await fbBatch.commit();
-    alert("Randomized Slot Sync Complete!");
-    renderSlotPreview(slotData);
-    refreshDashboard();
+  const examId = document.getElementById("slotExamSelect").value;
+  const classroom = document.getElementById("classroomName").value;
+  const strength = parseInt(document.getElementById("classStrength").value);
+  const interval = parseInt(document.getElementById("slotInterval").value);
+  if (!examId || !classroom || isNaN(strength)) return alert("Missing Info");
+ 
+  const examDoc = await getDoc(doc(db, "exams", examId));
+  const baseTime = examDoc.data().time;
+  const shuffled = [...allStudents].sort(() => 0.5 - Math.random());
+ 
+  let slotData = [];
+  for (let i = 0, sNum = 1; i < shuffled.length; i += strength, sNum++) {
+    const batch = shuffled.slice(i, i + strength);
+    const stime = calcTime(baseTime, (sNum - 1) * interval);
+    let benches = Array.from({ length: strength }, (_, idx) => idx + 1).sort(() => 0.5 - Math.random());
+    batch.forEach((std, idx) => {
+      slotData.push({
+        studentId: std.uid, studentName: std.name, prn: std.prn,
+        examId, examTitle: examDoc.data().title, classroom,
+        slotNumber: sNum, slotTime: stime, benchNumber: benches[idx]
+      });
+    });
+  }
+ 
+  const fbBatch = writeBatch(db);
+  slotData.forEach(item => {
+    const r = doc(collection(db, "exam_slots"));
+    fbBatch.set(r, { ...item, department: facultyDept, createdAt: serverTimestamp() });
+  });
+  await fbBatch.commit();
+  alert("Randomized Slot Sync Complete!");
+  renderSlotPreview(slotData);
+  refreshDashboard();
 };
-
+ 
 function calcTime(start, add) {
-    let [h, m] = start.split(':').map(Number);
-    let d = new Date(); d.setHours(h, m + add);
-    return d.toTimeString().substring(0, 5);
+  let [h, m] = start.split(':').map(Number);
+  let d = new Date();
+  d.setHours(h, m + add);
+  return d.toTimeString().substring(0, 5);
 }
-
+ 
 function renderSlotPreview(data) {
-    const container = document.getElementById("slotResults");
-    container.innerHTML = `<div class="card mt-20 animate-in"><h4>Distribution Preview</h4><table class="schedule-table"><thead><tr><th>Batch</th><th>Bench</th><th>Student</th></tr></thead><tbody>${data.map(d => `<tr><td>Batch ${d.slotNumber}</td><td class="font-bold text-accent">#${d.benchNumber}</td><td>${d.studentName}</td></tr>`).join('')}</tbody></table></div>`;
+  const container = document.getElementById("slotResults");
+  container.innerHTML = `
+    <div class="card mt-20 animate-in">
+      <h4>Distribution Preview</h4>
+      <table class="schedule-table">
+        <thead><tr><th>Batch</th><th>Bench</th><th>Student</th></tr></thead>
+        <tbody>${data.map(d => `<tr><td>Batch ${d.slotNumber}</td><td class="font-bold text-accent">#${d.benchNumber}</td><td>${d.studentName}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>`;
 }
-
+ 
 /* ================= 4. HALL TICKET GENERATOR ================= */
 async function loadSubjectsForHallTicket() {
-    const container = document.getElementById("htSubjectList");
-    const q = query(collection(db, "exams"), where("department", "==", facultyDept), where("type", "==", "offline"));
-    const snap = await getDocs(q);
-    container.innerHTML = snap.empty ? "<p class='text-muted'>No subjects found in time table.</p>" : "";
-    snap.forEach(d => {
-        const exam = d.data();
-        container.innerHTML += `
-            <label class="checkbox-item card mb-10" style="padding:10px 15px; flex-direction:row; gap:10px; cursor:pointer">
-                <input type="checkbox" name="htSub" value="${d.id}" data-title="${exam.title}" data-date="${exam.date}" data-time="${exam.time}">
-                <div><b>${exam.title}</b> <small class="text-muted">(${exam.date})</small></div>
-            </label>`;
-    });
+  const container = document.getElementById("htSubjectList");
+  const q = query(collection(db, "exams"), where("department", "==", facultyDept), where("type", "==", "offline"));
+  const snap = await getDocs(q);
+  container.innerHTML = snap.empty ? "<p class='text-muted'>No subjects found in time table.</p>" : "";
+  snap.forEach(d => {
+    const exam = d.data();
+    container.innerHTML += `
+      <label class="checkbox-item card mb-10" style="padding:10px 15px; flex-direction:row; gap:10px; cursor:pointer">
+        <input type="checkbox" name="htSub" value="${d.id}" data-title="${exam.title}" data-date="${exam.date}" data-time="${exam.time}">
+        <div><b>${exam.title}</b> <small class="text-muted">(${exam.date})</small></div>
+      </label>`;
+  });
 }
-
+ 
 window.issueHallTickets = async function() {
-    const selected = document.querySelectorAll('input[name="htSub"]:checked');
-    const examSeries = document.getElementById("htSeries").value;
-    if (selected.length === 0 || !examSeries) return alert("Select subjects and name the series");
-
-    const subjects = Array.from(selected).map(s => ({
-        id: s.value, title: s.getAttribute('data-title'), date: s.getAttribute('data-date'), time: s.getAttribute('data-time')
-    }));
-
-    const fbBatch = writeBatch(db);
-    allStudents.forEach(std => {
-        const htRef = doc(collection(db, "hall_tickets"), `${examSeries}_${std.uid}`);
-        fbBatch.set(htRef, {
-            studentId: std.uid, studentName: std.name, prn: std.prn, department: facultyDept,
-            batch: std.batch, seriesName: examSeries, subjects: subjects, issuedAt: serverTimestamp(), status: "active"
-        });
+  const selected = document.querySelectorAll('input[name="htSub"]:checked');
+  const examSeries = document.getElementById("htSeries").value;
+  if (selected.length === 0 || !examSeries) return alert("Select subjects and name the series");
+ 
+  const subjects = Array.from(selected).map(s => ({
+    id: s.value,
+    title: s.getAttribute('data-title'),
+    date: s.getAttribute('data-date'),
+    time: s.getAttribute('data-time')
+  }));
+ 
+  const fbBatch = writeBatch(db);
+  allStudents.forEach(std => {
+    const htRef = doc(collection(db, "hall_tickets"), `${examSeries}_${std.uid}`);
+    fbBatch.set(htRef, {
+      studentId: std.uid, studentName: std.name, prn: std.prn,
+      department: facultyDept, batch: std.batch, seriesName: examSeries,
+      subjects: subjects, issuedAt: serverTimestamp(), status: "active"
     });
-
-    await fbBatch.commit();
-    alert(`Hall Tickets issued to ${allStudents.length} students!`);
-    refreshDashboard();
+  });
+ 
+  await fbBatch.commit();
+  alert(`Hall Tickets issued to ${allStudents.length} students!`);
+  refreshDashboard();
 };
-
+ 
 /* ================= 5. HOME CLICKS, STATS & GRIEVANCES ================= */
 async function loadCreatedExams() {
-    const container = document.getElementById('examList');
-    const q = query(collection(db, "exams"), where("department", "==", facultyDept));
-    const snap = await getDocs(q);
-    container.innerHTML = snap.empty ? "<p class='empty-msg'>No activity.</p>" : "";
-    
-    for (const docSnap of snap.docs) {
-        const e = docSnap.data(); const eid = docSnap.id;
-        const isOff = e.type === 'offline';
-        let slotInfo = "";
-        if(isOff) {
-            const sq = query(collection(db, "exam_slots"), where("examId", "==", eid));
-            const sSnap = await getDocs(sq);
-            slotInfo = sSnap.empty ? `<div class="slot-status warn">Slots Pending</div>` : `<div class="slot-status success">Active: ${sSnap.docs[0].data().classroom}</div>`;
-        }
-
-        container.innerHTML += `
-            <div class="card list-item clickable h-item" onclick="viewExamStats('${eid}')">
-                <div class="item-main">
-                    <div class="icon-bg ${isOff ? 'orange' : 'blue'}"><i data-lucide="${isOff ? 'map-pin' : 'monitor'}"></i></div>
-                    <div class="flex-1">
-                        <div class="flex-between"><h4 class="m-0">${e.title}</h4><span class="badge ${isOff ? 'badge-orange' : 'badge-blue'}">${e.type}</span></div>
-                        <div class="flex-between mt-5"><small class="text-muted">${e.date}</small>${slotInfo}</div>
-                    </div>
-                </div>
-            </div>`;
+  const container = document.getElementById('examList');
+  const q = query(collection(db, "exams"), where("department", "==", facultyDept));
+  const snap = await getDocs(q);
+  container.innerHTML = snap.empty ? "<p class='empty-msg'>No activity.</p>" : "";
+ 
+  for (const docSnap of snap.docs) {
+    const e = docSnap.data();
+    const eid = docSnap.id;
+    const isOff = e.type === 'offline';
+    let slotInfo = "";
+    if (isOff) {
+      const sq = query(collection(db, "exam_slots"), where("examId", "==", eid));
+      const sSnap = await getDocs(sq);
+      slotInfo = sSnap.empty
+        ? `<div class="slot-status warn">Slots Pending</div>`
+        : `<div class="slot-status success">Active: ${sSnap.docs[0].data().classroom}</div>`;
     }
-    lucide.createIcons();
-}
-
-window.viewExamStats = async function(id) {
-    const sSnap = await getDocs(query(collection(db, "exam_slots"), where("examId", "==", id)));
-    if(sSnap.empty) return alert("Details: No batch data generated.");
-    const d = sSnap.docs[0].data();
-    alert(`Exam: ${d.examTitle}\nRoom: ${d.classroom}\nStudents: ${sSnap.size}`);
-};
-
-async function loadDashboardStats() {
-    const qEx = await getDocs(query(collection(db, "exams"), where("department", "==", facultyDept)));
-    const qGr = await getDocs(query(collection(db, "grievances"), where("dept", "==", facultyDept), where("status", "==", "Open")));
-    document.getElementById('statExams').innerText = qEx.size;
-    document.getElementById('statGrievances').innerText = qGr.size;
-}
-
-async function loadGrievances() {
-    const container = document.getElementById('grievanceContainer');
-    const snap = await getDocs(query(collection(db, "grievances"), where("dept", "==", facultyDept)));
-    container.innerHTML = snap.empty ? "<p class='empty-msg'>Inbox Clear.</p>" : "";
-    
-    snap.forEach(docSnap => {
-        const g = docSnap.data();
-        const gid = docSnap.id;
-        
-        container.innerHTML += `
-            <div class="card" style="padding: 20px; margin-bottom:15px;">
-                <div class="flex-between">
-                    <div>
-                        <span class="badge ${g.status.toLowerCase()}">${g.status}</span>
-                        <h4 class="m-0 mt-5">${g.studentName}</h4>
-                        <p style="margin: 8px 0; font-size: 14px; color: var(--text);">${g.reason}</p>
-                    </div>
-                    ${g.status === 'Resolved' ? '<div class="icon-bg blue" style="width:30px; height:30px;"><i data-lucide="check-circle" size="18"></i></div>' : ''}
-                </div>
-                
-                ${g.status === 'Open' ? `
-                    <div class="mt-20" style="border-top: 1px solid var(--border); padding-top: 15px;">
-                        <textarea id="comment-${gid}" placeholder="Enter resolution comment for the student..." rows="2" style="margin-top:0; border: 1px solid #cbd5e1;"></textarea>
-                        <button class="action-btn w-100 mt-10" onclick="resolveGrievance('${gid}')">Resolve with Comment</button>
-                    </div>
-                ` : ''}
-            </div>`;
-    });
-    lucide.createIcons();
-}
-
-window.resolveGrievance = async function(id) {
-    const commentBox = document.getElementById(`comment-${id}`);
-    const commentText = commentBox.value.trim();
-    if (!commentText) return alert("Please provide a comment before resolving.");
-
-    try {
-        const batch = writeBatch(db);
-        const grievanceRef = doc(db, "grievances", id);
-        batch.update(grievanceRef, { status: "Resolved", resolvedAt: serverTimestamp() });
-        const commentRef = doc(collection(db, "comments_grievances"));
-        batch.set(commentRef, { grievanceId: id, facultyUID: facultyUID, facultyName: document.querySelector(".u-name").innerText, comment: commentText, timestamp: serverTimestamp() });
-        await batch.commit();
-        alert("Grievance resolved.");
-        refreshDashboard();
-    } catch (error) {
-        console.error(error);
-        alert("Error resolving.");
-    }
-};
-
-/* ================= 6. RESULT PUBLISHER (FULL VERSION) ================= */
-
-async function loadDataForResultPublishing() {
-
-    const examSelect = document.getElementById('resExamSelect');
-
-    const qEx = query(
-        collection(db, "exams"),
-        where("department", "==", facultyDept)
-    );
-
-    const snapEx = await getDocs(qEx);
-
-    allExams = [];
-
-    snapEx.forEach(d => {
-        const ex = d.data();
-        ex.id = d.id;
-        allExams.push(ex);
-    });
-
-    console.log("Loaded Exams:", allExams); // debug check
-}
-
-
-
-
-/* ===== LIVE TOTAL CALCULATION ===== */
-
-window.updateLiveTotal = function() {
-    let total = 0;
-    document.querySelectorAll('.q-mark-dropdown').forEach(dd => {
-        total += Number(dd.value) || 0;
-    });
-
-    document.getElementById('liveTotalMarks').innerText = total;
-};
-
-
-/* ===== OFFLINE VALIDATION ===== */
-
-window.validateOfflineMarks = function(max) {
-    const input = document.getElementById('offlineTotalMark');
-    if(Number(input.value) > max) {
-        input.value = max;
-    }
-};
-
-
-/* ===== PUBLISH RESULT ===== */
-
-
-
-
-
-async function loadReevaluationRequests() {
-
-    const container = document.getElementById("reevaluationContainer");
-
-    const q = query(
-        collection(db, "reevaluation_requests"),
-        where("department", "==", facultyDept)
-    );
-
-    const snap = await getDocs(q);
-
-    if (snap.empty) {
-        container.innerHTML = "<p class='empty-msg'>No requests found.</p>";
-        return;
-    }
-
-    container.innerHTML = "";
-
-    snap.forEach(docSnap => {
-
-        const r = docSnap.data();
-        const rid = docSnap.id;
-
-        container.innerHTML += `
-            <div class="card" style="margin-bottom:15px;">
-                <div class="flex-between">
-                    <div>
-                        <b>${r.studentName}</b>
-                        <div style="font-size:13px; color:var(--muted)">
-                            ${r.examTitle} (${r.obtainedMarks}/${r.maxMarks})
-                        </div>
-                    </div>
-                    <span class="badge-blue">${r.status}</span>
-                </div>
-
-                <p style="margin-top:10px;"><b>Reason:</b> ${r.reason}</p>
-
-                ${r.status === "Pending" ? `
-                    <div style="margin-top:15px;">
-                        <label>Upload Answer Sheet (PDF)</label>
-                        <input type="file" accept="application/pdf" 
-                               onchange="uploadAnswerSheet(event, '${rid}')">
-
-                        <textarea id="facultyComment-${rid}" 
-                                  placeholder="Enter comment..."
-                                  rows="2"
-                                  style="margin-top:10px;"></textarea>
-
-                        <div style="display:flex; gap:10px; margin-top:10px;">
-                            <button class="action-btn w-100"
-                                style="background:var(--green)"
-                                onclick="updateReevaluationStatus('${rid}', 'Approved')">
-                                Approve
-                            </button>
-
-                            <button class="action-btn w-100"
-                                style="background:var(--red)"
-                                onclick="updateReevaluationStatus('${rid}', 'Rejected')">
-                                Reject
-                            </button>
-                        </div>
-                    </div>
-                ` : `
-                    ${r.answerSheetURL ? `<a href="${r.answerSheetURL}" target="_blank">View Uploaded PDF</a>` : ""}
-                    <p><b>Faculty Comment:</b> ${r.facultyComment || "None"}</p>
-                `}
-            </div>
-        `;
-    });
-
-    lucide.createIcons();
-}
-
-window.uploadAnswerSheet = async function(event, requestId) {
-
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const storageRef = ref(storage, `reevaluation_sheets/${requestId}.pdf`);
-
-    await uploadBytes(storageRef, file);
-    const downloadURL = await getDownloadURL(storageRef);
-
-    await updateDoc(doc(db, "reevaluation_requests", requestId), {
-        answerSheetURL: downloadURL
-    });
-
-    alert("Answer sheet uploaded successfully!");
-};
-
-window.updateReevaluationStatus = async function(requestId, status) {
-
-    const comment = document.getElementById(`facultyComment-${requestId}`)?.value || "";
-
-    await updateDoc(doc(db, "reevaluation_requests", requestId), {
-        status: status,
-        facultyComment: comment,
-        resolvedAt: serverTimestamp(),
-        resolvedBy: facultyUID
-    });
-
-    alert("Status Updated!");
-    loadReevaluationRequests();
-};
-
-window.uploadAnswerSheet = async function(event, requestId) {
-
-    try {
-        console.log("Upload started...");
-
-        const file = event.target.files[0];
-        if (!file) {
-            console.log("No file selected");
-            return;
-        }
-
-        console.log("File:", file.name);
-
-        const storageRef = ref(storage, `reevaluation_sheets/${requestId}.pdf`);
-
-        await uploadBytes(storageRef, file);
-
-        console.log("File uploaded");
-
-        const downloadURL = await getDownloadURL(storageRef);
-
-        console.log("Download URL:", downloadURL);
-
-        await updateDoc(doc(db, "reevaluation_requests", requestId), {
-            answerSheetURL: downloadURL
-        });
-
-        alert("Upload successful!");
-    } 
-    catch (error) {
-        console.error("Upload error:", error);
-        alert("Upload failed. Check console.");
-    }
-};
-
-/* ================= NEW RESULT SYSTEM ================= */
-
-window.generateQuestionFields = function() {
-
-    const questionCount = Number(document.getElementById("resQuestionCount").value);
-    const container = document.getElementById("questionMarksContainer");
-
-    if (!questionCount || questionCount <= 0) {
-        alert("Enter valid number of questions");
-        return;
-    }
-
-    container.innerHTML = "";
-
-    for (let i = 1; i <= questionCount; i++) {
-        container.innerHTML += `
-            <div class="q-mark-card">
-                <div class="flex-between">
-                    <b>Question ${i}</b>
-                </div>
-                <input type="number" 
-       min="0" 
-       placeholder="Enter marks for Question ${i}"
-       class="individual-mark"
-       oninput="calculateLiveTotal()">
-
-<textarea 
-       class="question-comment"
-       placeholder="Add comment for Question ${i}"
-       style="margin-top:10px; height:60px;"></textarea>
-            </div>
-        `;
-    }
-
+ 
     container.innerHTML += `
-        <div class="card" style="border:2px solid var(--accent);">
-            <div class="flex-between">
-                <span>Total Marks:</span>
-                <b id="liveTotalDisplay" style="color:var(--accent); font-size:20px;">0</b>
-            </div>
+      <div class="card list-item clickable h-item" onclick="viewExamStats('${eid}')">
+        <div class="item-main">
+          <div class="icon-bg ${isOff ? 'orange' : 'blue'}"><i data-lucide="${isOff ? 'map-pin' : 'monitor'}"></i></div>
+          <div class="flex-1">
+            <div class="flex-between"><h4 class="m-0">${e.title}</h4><span class="badge ${isOff ? 'badge-orange' : 'badge-blue'}">${e.type}</span></div>
+            <div class="flex-between mt-5"><small class="text-muted">${e.date}</small>${slotInfo}</div>
+          </div>
         </div>
-    `;
+      </div>`;
+  }
+  lucide.createIcons();
+}
+ 
+window.viewExamStats = async function(id) {
+  const sSnap = await getDocs(query(collection(db, "exam_slots"), where("examId", "==", id)));
+  if (sSnap.empty) return alert("Details: No batch data generated.");
+  const d = sSnap.docs[0].data();
+  alert(`Exam: ${d.examTitle}\nRoom: ${d.classroom}\nStudents: ${sSnap.size}`);
 };
-
-window.calculateLiveTotal = function() {
-    let total = 0;
-
-    document.querySelectorAll(".individual-mark").forEach(input => {
-        total += Number(input.value) || 0;
+ 
+async function loadDashboardStats() {
+  const qEx = await getDocs(query(collection(db, "exams"), where("department", "==", facultyDept)));
+  const qGr = await getDocs(query(collection(db, "grievances"), where("dept", "==", facultyDept), where("status", "==", "Open")));
+  document.getElementById('statExams').innerText = qEx.size;
+  document.getElementById('statGrievances').innerText = qGr.size;
+}
+ 
+async function loadGrievances() {
+  const container = document.getElementById('grievanceContainer');
+  const snap = await getDocs(query(collection(db, "grievances"), where("dept", "==", facultyDept)));
+  container.innerHTML = snap.empty ? "<p class='empty-msg'>Inbox Clear.</p>" : "";
+ 
+  snap.forEach(docSnap => {
+    const g = docSnap.data();
+    const gid = docSnap.id;
+    container.innerHTML += `
+      <div class="card" style="padding: 20px; margin-bottom:15px;">
+        <div class="flex-between">
+          <div>
+            <span class="badge ${g.status.toLowerCase()}">${g.status}</span>
+            <h4 class="m-0 mt-5">${g.studentName}</h4>
+            <p style="margin: 8px 0; font-size: 14px; color: var(--text);">${g.reason}</p>
+          </div>
+          ${g.status === 'Resolved' ? '<div class="icon-bg blue" style="width:30px; height:30px;"><i data-lucide="check-circle" size="18"></i></div>' : ''}
+        </div>
+        ${g.status === 'Open' ? `
+          <div class="mt-20" style="border-top: 1px solid var(--border); padding-top: 15px;">
+            <textarea id="comment-${gid}" placeholder="Enter resolution comment for the student..." rows="2" style="margin-top:0; border: 1px solid #cbd5e1;"></textarea>
+            <button class="action-btn w-100 mt-10" onclick="resolveGrievance('${gid}')">Resolve with Comment</button>
+          </div>` : ''}
+      </div>`;
+  });
+  lucide.createIcons();
+}
+ 
+window.resolveGrievance = async function(id) {
+  const commentBox = document.getElementById(`comment-${id}`);
+  const commentText = commentBox.value.trim();
+  if (!commentText) return alert("Please provide a comment before resolving.");
+ 
+  try {
+    const batch = writeBatch(db);
+    const grievanceRef = doc(db, "grievances", id);
+    batch.update(grievanceRef, { status: "Resolved", resolvedAt: serverTimestamp() });
+    const commentRef = doc(collection(db, "comments_grievances"));
+    batch.set(commentRef, {
+      grievanceId: id,
+      facultyUID: facultyUID,
+      facultyName: document.querySelector(".u-name").innerText,
+      comment: commentText,
+      timestamp: serverTimestamp()
     });
-
-    document.getElementById("liveTotalDisplay").innerText = total;
+    await batch.commit();
+    alert("Grievance resolved.");
+    refreshDashboard();
+  } catch (error) {
+    console.error(error);
+    alert("Error resolving.");
+  }
 };
-
+ 
+/* ================= 6. RESULT PUBLISHER ================= */
+async function loadDataForResultPublishing() {
+  const qEx = query(collection(db, "exams"), where("department", "==", facultyDept));
+  const snapEx = await getDocs(qEx);
+  allExams = [];
+  snapEx.forEach(d => {
+    const ex = d.data();
+    ex.id = d.id;
+    allExams.push(ex);
+  });
+}
+ 
+window.updateLiveTotal = function() {
+  let total = 0;
+  document.querySelectorAll('.q-mark-dropdown').forEach(dd => {
+    total += Number(dd.value) || 0;
+  });
+  const el = document.getElementById('liveTotalMarks');
+  if (el) el.innerText = total;
+};
+ 
+window.validateOfflineMarks = function(max) {
+  const input = document.getElementById('offlineTotalMark');
+  if (Number(input.value) > max) input.value = max;
+};
+ 
 window.publishExamResult = async function() {
-
-    const examId = document.getElementById("resExamSelect").value;
-
-    if (!selectedStudent || !examId) {
-        alert("Complete all fields & search valid UID");
-        return;
-    }
-
-    const exam = allExams.find(e => e.id === examId);
-    if (!exam) return alert("Invalid exam");
-
-    let breakdown = [];
-    let total = 0;
-
-    const inputs = document.querySelectorAll(".individual-mark");
-
-    if (inputs.length === 0) {
-        alert("No marks entered.");
-        return;
-    }
-
-    const comments = document.querySelectorAll(".question-comment");
-
-inputs.forEach((input, index) => {
-
+  const examId = document.getElementById("resExamSelect").value;
+ 
+  if (!selectedStudent || !examId) {
+    alert("Complete all fields & search valid UID");
+    return;
+  }
+ 
+  const exam = allExams.find(e => e.id === examId);
+  if (!exam) return alert("Invalid exam");
+ 
+  const inputs = document.querySelectorAll(".individual-mark");
+  if (inputs.length === 0) {
+    alert("No marks entered.");
+    return;
+  }
+ 
+  let breakdown = [];
+  let total = 0;
+  const comments = document.querySelectorAll(".question-comment");
+ 
+  inputs.forEach((input, index) => {
     const mark = Number(input.value) || 0;
     const comment = comments[index]?.value?.trim() || "";
-
-    breakdown.push({
-        questionNumber: index + 1,
-        marks: mark,
-        comment: comment
-    });
-
+    breakdown.push({ questionNumber: index + 1, marks: mark, comment });
     total += mark;
-});
-
-    try {
-
-        const resultRef = doc(db, "results_published", `${selectedStudent.uid}_${examId}`);
-
-        await setDoc(resultRef, {
-            breakdown,
-            department: facultyDept,
-            examId,
-            examTitle: exam.title,
-            maxMarks: exam.totalMarks || total,
-            obtainedMarks: total,
-            prn: selectedStudent.prn,
-            publishedAt: serverTimestamp(),
-            publishedBy: facultyUID,
-            studentId: selectedStudent.uid,
-            studentName: selectedStudent.name
-        });
-
-        alert(`Result Published Successfully!\n${selectedStudent.name} secured ${total}/${exam.totalMarks}`);
-
-        // reset
-        document.getElementById("questionMarksContainer").innerHTML = "";
-        document.getElementById("resQuestionCount").value = "";
-        document.getElementById("resStudentUID").value = "";
-        document.getElementById("selectedStudentInfo").innerHTML = "";
-        document.getElementById("resExamSelect").disabled = true;
-        document.getElementById("resExamSelect").innerHTML = '<option value="">Search UID first</option>';
-
-        selectedStudent = null;
-
-    } catch (error) {
-        console.error(error);
-        alert("Error publishing result");
-    }
+  });
+ 
+  try {
+    const resultRef = doc(db, "results_published", `${selectedStudent.uid}_${examId}`);
+    await setDoc(resultRef, {
+      breakdown, department: facultyDept, examId,
+      examTitle: exam.title, maxMarks: exam.totalMarks || total,
+      obtainedMarks: total, prn: selectedStudent.prn,
+      publishedAt: serverTimestamp(), publishedBy: facultyUID,
+      studentId: selectedStudent.uid, studentName: selectedStudent.name
+    });
+ 
+    alert(`Result Published Successfully!\n${selectedStudent.name} secured ${total}/${exam.totalMarks}`);
+ 
+    document.getElementById("questionMarksContainer").innerHTML = "";
+    document.getElementById("resQuestionCount").value = "";
+    document.getElementById("resStudentUID").value = "";
+    document.getElementById("selectedStudentInfo").innerHTML = "";
+    document.getElementById("resExamSelect").disabled = true;
+    document.getElementById("resExamSelect").innerHTML = '<option value="">Search UID first</option>';
+    selectedStudent = null;
+  } catch (error) {
+    console.error(error);
+    alert("Error publishing result");
+  }
 };
-
+ 
 window.checkIfResultExists = async function() {
-
-    const examId = document.getElementById("resExamSelect").value;
-
-    if (!selectedStudent || !examId) return;
-
-    const resultDoc = await getDoc(
-        doc(db, "results_published", `${selectedStudent.uid}_${examId}`)
-    );
-
-    if (resultDoc.exists()) {
-        alert("⚠ Result already published for this student & subject.");
-        document.getElementById("resExamSelect").value = "";
-    }
+  const examId = document.getElementById("resExamSelect").value;
+  if (!selectedStudent || !examId) return;
+  const resultDoc = await getDoc(doc(db, "results_published", `${selectedStudent.uid}_${examId}`));
+  if (resultDoc.exists()) {
+    alert("⚠ Result already published for this student & subject.");
+    document.getElementById("resExamSelect").value = "";
+  }
 };
-let selectedStudent = null;
-
+ 
 window.searchStudentByUID = async function() {
-
-    const uid = document.getElementById("resStudentUID").value.trim();
-    const infoBox = document.getElementById("selectedStudentInfo");
-    const examSelect = document.getElementById("resExamSelect");
-
-    if (!uid) {
-        alert("Enter UID");
-        return;
+  const uid = document.getElementById("resStudentUID").value.trim();
+  const infoBox = document.getElementById("selectedStudentInfo");
+  const examSelect = document.getElementById("resExamSelect");
+ 
+  if (!uid) return alert("Enter UID");
+ 
+  try {
+    const studentDoc = await getDoc(doc(db, "users", uid));
+    if (!studentDoc.exists()) {
+      alert("Student not found");
+      infoBox.innerHTML = "";
+      selectedStudent = null;
+      examSelect.disabled = true;
+      return;
     }
-
-    try {
-        const studentDoc = await getDoc(doc(db, "users", uid));
-
-        if (!studentDoc.exists()) {
-            alert("Student not found");
-            infoBox.innerHTML = "";
-            selectedStudent = null;
-            examSelect.disabled = true;
-            return;
-        }
-
-        const student = studentDoc.data();
-
-        if (student.role !== "student" || student.department !== facultyDept) {
-            alert("Unauthorized or different department student");
-            infoBox.innerHTML = "";
-            selectedStudent = null;
-            examSelect.disabled = true;
-            return;
-        }
-
-        selectedStudent = {
-            uid: uid,
-            name: student.name,
-            prn: student.prn
-        };
-
-        // Enable subject dropdown
-        examSelect.disabled = false;
-        examSelect.innerHTML = '<option value="">-- Select Subject --</option>';
-
-        allExams.forEach(ex => {
-            examSelect.innerHTML += `
-                <option value="${ex.id}">
-                    ${ex.title} (${ex.date})
-                </option>
-            `;
-        });
-
-    } catch (error) {
-        console.error(error);
-        alert("Error fetching student");
+ 
+    const student = studentDoc.data();
+    if (student.role !== "student" || student.department !== facultyDept) {
+      alert("Unauthorized or different department student");
+      infoBox.innerHTML = "";
+      selectedStudent = null;
+      examSelect.disabled = true;
+      return;
     }
+ 
+    selectedStudent = { uid, name: student.name, prn: student.prn };
+ 
+    infoBox.innerHTML = `
+      <div class="card" style="padding:12px 18px; border-left: 4px solid var(--accent); margin-top:10px;">
+        <b>${student.name}</b> &nbsp;<small class="text-muted">PRN: ${student.prn}</small>
+      </div>`;
+ 
+    examSelect.disabled = false;
+    examSelect.innerHTML = '<option value="">-- Select Subject --</option>';
+    allExams.forEach(ex => {
+      examSelect.innerHTML += `<option value="${ex.id}">${ex.title} (${ex.date})</option>`;
+    });
+  } catch (error) {
+    console.error(error);
+    alert("Error fetching student");
+  }
 };
+ 
 window.onExamChangeResults = function() {
-
-    const examId = document.getElementById("resExamSelect").value;
-    const container = document.getElementById("questionMarksContainer");
-    const questionInput = document.getElementById("resQuestionCount");
-
-    container.innerHTML = "";
-    questionInput.value = "";
-
-    if (!examId) return;
-
-    const exam = allExams.find(e => e.id === examId);
-    if (!exam) return;
-
-    /* ===============================
-       🧠 ONLINE / MCQ EXAM (ADVANCED)
-    =============================== */
-    if (exam.type === "online" || exam.type === "mcq") {
-
-        questionInput.style.display = "none";
-
-        exam.questions.forEach((q, index) => {
-
-            let options = `<option value="0">0</option>`;
-
-            for (let m = 0.5; m <= q.marks; m += 0.5) {
-                options += `<option value="${m}">${m}</option>`;
-            }
-
-            container.innerHTML += `
-    <div class="q-mark-card">
-        <div class="flex-between">
+  const examId = document.getElementById("resExamSelect").value;
+  const container = document.getElementById("questionMarksContainer");
+  const questionInput = document.getElementById("resQuestionCount");
+ 
+  container.innerHTML = "";
+  questionInput.value = "";
+  if (!examId) return;
+ 
+  const exam = allExams.find(e => e.id === examId);
+  if (!exam) return;
+ 
+  if (exam.type === "online" || exam.type === "mcq") {
+    questionInput.style.display = "none";
+ 
+    exam.questions.forEach((q, index) => {
+      let options = `<option value="0">0</option>`;
+      for (let m = 0.5; m <= q.marks; m += 0.5) {
+        options += `<option value="${m}">${m}</option>`;
+      }
+      container.innerHTML += `
+        <div class="q-mark-card">
+          <div class="flex-between">
             <b>Question ${index + 1}</b>
             <span class="badge-blue">${q.marks} Max</span>
-        </div>
-
-        <p style="margin-top:8px">${q.text}</p>
-
-        <select class="individual-mark"
-                onchange="calculateLiveTotal()">
-            ${options}
-        </select>
-
-        <textarea 
-            class="question-comment"
-            placeholder="Add comment for this question..."
-            style="margin-top:10px; height:60px;"></textarea>
-    </div>
-`;
-        });
-    }
-
-    /* ===============================
-       📝 OFFLINE EXAM (KEEP OLD)
-    =============================== */
-    else {
-
-        questionInput.style.display = "block";
-
-        container.innerHTML = `
-            <div class="card" style="border:1px dashed var(--accent);">
-                Offline exam selected. Enter total questions and click Generate.
-            </div>
-        `;
-    }
-
-    /* ===== LIVE TOTAL DISPLAY ===== */
-    container.innerHTML += `
-        <div class="card" style="border:2px solid var(--accent); margin-top:15px;">
-            <div class="flex-between">
-                <span>Total Obtained:</span>
-                <b id="liveTotalDisplay" style="color:var(--accent); font-size:20px;">0</b>
-            </div>
-        </div>
-    `;
+          </div>
+          <p style="margin-top:8px">${q.text}</p>
+          <select class="individual-mark" onchange="calculateLiveTotal()">${options}</select>
+          <textarea class="question-comment" placeholder="Add comment for this question..." style="margin-top:10px; height:60px;"></textarea>
+        </div>`;
+    });
+  } else {
+    questionInput.style.display = "block";
+    container.innerHTML = `
+      <div class="card" style="border:1px dashed var(--accent);">
+        Offline exam selected. Enter total questions and click Generate.
+      </div>`;
+  }
+ 
+  container.innerHTML += `
+    <div class="card" style="border:2px solid var(--accent); margin-top:15px;">
+      <div class="flex-between">
+        <span>Total Obtained:</span>
+        <b id="liveTotalDisplay" style="color:var(--accent); font-size:20px;">0</b>
+      </div>
+    </div>`;
 };
+ 
+window.generateQuestionFields = function() {
+  const questionCount = Number(document.getElementById("resQuestionCount").value);
+  const container = document.getElementById("questionMarksContainer");
+ 
+  if (!questionCount || questionCount <= 0) {
+    alert("Enter valid number of questions");
+    return;
+  }
+ 
+  container.innerHTML = "";
+  for (let i = 1; i <= questionCount; i++) {
+    container.innerHTML += `
+      <div class="q-mark-card">
+        <div class="flex-between">
+          <b>Question ${i}</b>
+        </div>
+        <input type="number" min="0" placeholder="Enter marks for Question ${i}" class="individual-mark" oninput="calculateLiveTotal()">
+        <textarea class="question-comment" placeholder="Add comment for Question ${i}" style="margin-top:10px; height:60px;"></textarea>
+      </div>`;
+  }
+ 
+  container.innerHTML += `
+    <div class="card" style="border:2px solid var(--accent);">
+      <div class="flex-between">
+        <span>Total Marks:</span>
+        <b id="liveTotalDisplay" style="color:var(--accent); font-size:20px;">0</b>
+      </div>
+    </div>`;
+};
+ 
+window.calculateLiveTotal = function() {
+  let total = 0;
+  document.querySelectorAll(".individual-mark").forEach(input => {
+    total += Number(input.value) || 0;
+  });
+  const el = document.getElementById("liveTotalDisplay");
+  if (el) el.innerText = total;
+};
+ 
+/* ================= 7. RE-EVALUATION ================= */
+async function loadReevaluationRequests() {
+  const container = document.getElementById("reevaluationContainer");
+  const q = query(collection(db, "reevaluation_requests"), where("department", "==", facultyDept));
+  const snap = await getDocs(q);
+ 
+  if (snap.empty) {
+    container.innerHTML = "<p class='empty-msg'>No requests found.</p>";
+    return;
+  }
+ 
+  container.innerHTML = "";
+  snap.forEach(docSnap => {
+    const r = docSnap.data();
+    const rid = docSnap.id;
+    container.innerHTML += `
+      <div class="card" style="margin-bottom:15px;">
+        <div class="flex-between">
+          <div>
+            <b>${r.studentName}</b>
+            <div style="font-size:13px; color:var(--muted)">${r.examTitle} (${r.obtainedMarks}/${r.maxMarks})</div>
+          </div>
+          <span class="badge-blue">${r.status}</span>
+        </div>
+        <p style="margin-top:10px;"><b>Reason:</b> ${r.reason}</p>
+        ${r.status === "Pending" ? `
+          <div style="margin-top:15px;">
+            <label>Upload Answer Sheet (PDF)</label>
+            <input type="file" accept="application/pdf" onchange="uploadAnswerSheet(event, '${rid}')">
+            <textarea id="facultyComment-${rid}" placeholder="Enter comment..." rows="2" style="margin-top:10px;"></textarea>
+            <div style="display:flex; gap:10px; margin-top:10px;">
+              <button class="action-btn w-100" style="background:var(--green)" onclick="updateReevaluationStatus('${rid}', 'Approved')">Approve</button>
+              <button class="action-btn w-100" style="background:var(--red)" onclick="updateReevaluationStatus('${rid}', 'Rejected')">Reject</button>
+            </div>
+          </div>` : `
+          ${r.answerSheetURL ? `<a href="${r.answerSheetURL}" target="_blank">View Uploaded PDF</a>` : ""}
+          <p><b>Faculty Comment:</b> ${r.facultyComment || "None"}</p>`}
+      </div>`;
+  });
+  lucide.createIcons();
+}
+ 
+window.uploadAnswerSheet = async function(event, requestId) {
+  try {
+    const file = event.target.files[0];
+    if (!file) return;
+    const storageRef = ref(storage, `reevaluation_sheets/${requestId}.pdf`);
+    await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(storageRef);
+    await updateDoc(doc(db, "reevaluation_requests", requestId), { answerSheetURL: downloadURL });
+    alert("Upload successful!");
+  } catch (error) {
+    console.error("Upload error:", error);
+    alert("Upload failed. Check console.");
+  }
+};
+ 
+window.updateReevaluationStatus = async function(requestId, status) {
+  const comment = document.getElementById(`facultyComment-${requestId}`)?.value || "";
+  await updateDoc(doc(db, "reevaluation_requests", requestId), {
+    status, facultyComment: comment,
+    resolvedAt: serverTimestamp(), resolvedBy: facultyUID
+  });
+  alert("Status Updated!");
+  loadReevaluationRequests();
+};
+ 
 window.logoutUser = () => signOut(auth).then(() => location.href = "index.html");
 window.closeRecords = () => document.getElementById("recordViewerModal").style.display = "none";
 </script>
-
+ 
 <style>
-:root { --primary: #0f172a; --accent: #2563eb; --bg: #f8fafc; --red: #ef4444; --orange: #f59e0b; --green: #10b981; --white: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; }
-body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
-
-/* Dashboard UI Components */
-.navbar { background: var(--primary); color: white; padding: 12px 5%; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-.welcome-card { background: var(--primary); color: white; padding: 40px 5% 80px 5%; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 20px; }
-.stats-box { display: flex; gap: 15px; background: rgba(255,255,255,0.05); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
-.tabs-container { max-width: 1100px; margin: -40px auto 30px auto; background: var(--white); border-radius: 100px; display: flex; padding: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid var(--border); overflow-x: auto; }
-.tab-item { flex: 1; padding: 14px 20px; border-radius: 100px; border: none; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 600; color: var(--muted); transition: 0.3s; white-space: nowrap; }
+:root {
+  --primary: #0f172a;
+  --accent: #2563eb;
+  --bg: #f8fafc;
+  --red: #ef4444;
+  --orange: #f59e0b;
+  --green: #10b981;
+  --white: #ffffff;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --muted: #64748b;
+}
+ 
+* { box-sizing: border-box; }
+ 
+body {
+  margin: 0;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+}
+ 
+/* ===== NAVBAR ===== */
+.navbar {
+  background: var(--primary);
+  color: white;
+  padding: 12px 5%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+ 
+/* ===== WELCOME ===== */
+.welcome-card {
+  background: var(--primary);
+  color: white;
+  padding: 40px 5% 80px 5%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+.stats-box {
+  display: flex;
+  gap: 15px;
+  background: rgba(255,255,255,0.05);
+  padding: 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+ 
+/* ===== TABS ===== */
+.tabs-container {
+  max-width: 1100px;
+  margin: -40px auto 30px auto;
+  background: var(--white);
+  border-radius: 100px;
+  display: flex;
+  padding: 6px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+.tab-item {
+  flex: 1;
+  padding: 14px 20px;
+  border-radius: 100px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--muted);
+  transition: 0.3s;
+  white-space: nowrap;
+}
 .active-tab { background: var(--primary); color: white; }
-
-/* Grid & Content Area */
-.main-content { max-width: 1100px; margin: 0 auto 50px auto; padding: 0 15px; }
+ 
+/* ===== LAYOUT ===== */
+.main-content {
+  max-width: 1100px;
+  margin: 0 auto 50px auto;
+  padding: 0 15px;
+}
 .section-content { display: none; }
 .section-content.active { display: block; animation: slideUp 0.4s ease; }
 .resp-grid { display: grid; grid-template-columns: 1fr 1.8fr; gap: 25px; }
 .builder-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.card { background: var(--white); border-radius: 24px; padding: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid var(--border); }
+ 
+/* ===== CARDS ===== */
+.card {
+  background: var(--white);
+  border-radius: 24px;
+  padding: 25px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+}
 .profile-accent { border-top: 5px solid var(--accent); }
-.list-item { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; transition: 0.2s; }
+.list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 20px;
+  transition: 0.2s;
+}
 .h-item:hover { transform: translateY(-3px); border-color: var(--accent); box-shadow: 0 12px 24px rgba(0,0,0,0.05); }
 .clickable { cursor: pointer; }
-
-/* Result Publisher UI */
-.q-mark-card { background: #fcfdfe; border: 1px solid var(--border); border-radius: 20px; padding: 25px; margin-bottom: 20px; transition: 0.3s; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); }
+ 
+/* ===== STUDENT MANAGEMENT BUTTON ===== */
+.sm-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 16px 28px;
+  border-radius: 18px;
+  font-weight: 700;
+  font-size: 15px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 14px rgba(15,23,42,0.25);
+  margin-bottom: 30px;
+}
+.sm-trigger-btn:hover {
+  background: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(37,99,235,0.35);
+}
+ 
+/* ===== STUDENT PANEL (INLINE) ===== */
+#studentManagementPanel {
+  display: none;
+  animation: slideUp 0.35s ease;
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.close-panel-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: 0.2s;
+  font-size: 13px;
+}
+.close-panel-btn:hover { background: var(--red); color: white; border-color: var(--red); }
+ 
+/* ===== RESULT PUBLISHER ===== */
+.q-mark-card {
+  background: #fcfdfe;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 25px;
+  margin-bottom: 20px;
+  transition: 0.3s;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+}
 .q-mark-card:hover { border-color: var(--accent); background: white; transform: scale(1.01); }
-.q-mark-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.q-index { font-weight: 900; color: var(--primary); font-size: 16px; background: var(--border); padding: 4px 12px; border-radius: 8px; }
-.q-mark-text { font-size: 15px; color: var(--text); font-weight: 500; margin-bottom: 20px; line-height: 1.5; }
-.q-mark-dropdown { height: 50px; border: 2px solid var(--bg) !important; font-weight: 700; font-size: 16px; border-radius: 12px; }
-
-/* Utilities */
-.avatar-sm { width: 40px; height: 40px; background: var(--accent); color: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 800; }
-.icon-bg { width: 45px; height: 45px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.q-mark-dropdown {
+  height: 50px;
+  border: 2px solid var(--bg) !important;
+  font-weight: 700;
+  font-size: 16px;
+  border-radius: 12px;
+}
+ 
+/* ===== INFO GRID ===== */
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+.info-group label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; }
+.info-group p { margin: 4px 0 0 0; font-weight: 600; font-size: 14px; }
+ 
+/* ===== HISTORY ===== */
+.history-item-card { border: 1px solid var(--border); border-radius: 16px; padding: 18px; margin-bottom: 12px; }
+.history-title { font-weight: 700; font-size: 15px; }
+.history-score { font-size: 22px; font-weight: 900; color: var(--accent); }
+.history-meta { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.meta-tag { font-size: 11px; padding: 4px 10px; border-radius: 8px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.meta-tag.bad { background: #fee2e2; color: var(--red); }
+.meta-tag.good { background: #d1fae5; color: var(--green); }
+ 
+/* ===== UTILITIES ===== */
+.avatar-sm {
+  width: 40px; height: 40px;
+  background: var(--accent); color: white;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.icon-bg {
+  width: 45px; height: 45px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; flex-shrink: 0;
+}
 .icon-bg.blue { background: #eff6ff; color: var(--accent); }
 .icon-bg.orange { background: #fff7ed; color: var(--orange); }
-.action-btn { background: var(--accent); color: white; border: none; padding: 14px; border-radius: 14px; font-weight: 700; cursor: pointer; transition: 0.3s; }
-input, select, textarea { width: 100%; padding: 14px; margin-top: 10px; border-radius: 14px; border: 1px solid var(--border); background: #fcfdfe; font-size: 14px; box-sizing: border-box; font-family: inherit; }
+.action-btn {
+  background: var(--accent); color: white;
+  border: none; padding: 14px;
+  border-radius: 14px; font-weight: 700;
+  font-family: inherit;
+  cursor: pointer; transition: 0.3s;
+}
+.action-btn:hover { opacity: 0.9; }
+input, select, textarea {
+  width: 100%; padding: 14px; margin-top: 10px;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: #fcfdfe; font-size: 14px;
+  box-sizing: border-box; font-family: inherit;
+}
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
-.badge-blue { font-size: 10px; padding: 6px 12px; border-radius: 8px; font-weight: 800; text-transform: uppercase; background: #dbeafe; color: var(--accent); }
-.m-0 { margin: 0; } .mb-20 { margin-bottom: 20px; } .mt-10 { margin-top: 10px; } .mt-20 { margin-top: 20px; } .w-100 { width: 100%; }
-
-.builder-nav { display: flex; gap: 10px; margin-bottom: 25px; background: var(--white); padding: 8px; border-radius: 16px; border: 1px solid var(--border); }
-.b-type-btn { flex: 1; padding: 12px; border-radius: 12px; border: none; background: none; font-weight: 600; cursor: pointer; color: var(--muted); }
+.flex-1 { flex: 1; }
+.item-main { display: flex; align-items: center; gap: 15px; }
+.badge { font-size: 10px; padding: 4px 10px; border-radius: 8px; font-weight: 800; text-transform: uppercase; }
+.badge-blue { font-size: 10px; padding: 6px 12px; border-radius: 8px; font-weight: 800; text-transform: uppercase; background: #dbeafe; color: var(--accent); display: inline-block; }
+.badge-orange { background: #fff7ed; color: var(--orange); }
+.badge.open { background: #fee2e2; color: var(--red); }
+.badge.resolved { background: #d1fae5; color: var(--green); }
+.slot-status { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 8px; }
+.slot-status.warn { background: #fef3c7; color: var(--orange); }
+.slot-status.success { background: #d1fae5; color: var(--green); }
+.empty-msg { color: var(--muted); text-align: center; padding: 30px; font-size: 14px; }
+.text-muted { color: var(--muted); }
+.font-bold { font-weight: 700; }
+.text-accent { color: var(--accent); }
+.m-0 { margin: 0; }
+.mb-10 { margin-bottom: 10px; }
+.mb-20 { margin-bottom: 20px; }
+.mt-5 { margin-top: 5px; }
+.mt-10 { margin-top: 10px; }
+.mt-20 { margin-top: 20px; }
+.w-100 { width: 100%; }
+ 
+/* ===== BUILDER NAV ===== */
+.builder-nav {
+  display: flex; gap: 10px; margin-bottom: 25px;
+  background: var(--white); padding: 8px;
+  border-radius: 16px; border: 1px solid var(--border);
+}
+.b-type-btn {
+  flex: 1; padding: 12px; border-radius: 12px; border: none;
+  background: none; font-weight: 600; font-family: inherit;
+  cursor: pointer; color: var(--muted);
+}
 .active-b { background: var(--bg); color: var(--primary); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
-
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 20px; backdrop-filter: blur(5px); }
-.modal-card { width: 100%; max-width: 650px; background: white; border-radius: 32px; padding: 30px; animation: slideUp 0.3s ease; }
-@keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+ 
+/* ===== SCHEDULE TABLE ===== */
+.schedule-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+.schedule-table th, .schedule-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 14px; }
+.schedule-table th { font-weight: 700; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+ 
+/* ===== MODAL ===== */
+.modal-overlay {
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.85);
+  display: none; align-items: center; justify-content: center;
+  z-index: 3000; padding: 20px;
+  backdrop-filter: blur(5px);
+}
+.modal-card {
+  width: 100%; max-width: 650px;
+  background: white; border-radius: 32px;
+  padding: 30px; animation: slideUp 0.3s ease;
+  max-height: 90vh; overflow-y: auto;
+}
+ 
+/* ===== BTN ICON ===== */
+.btn-icon {
+  background: none; border: none; cursor: pointer; padding: 6px;
+  border-radius: 8px; display: inline-flex; align-items: center;
+}
+.btn-icon.red { color: var(--red); }
+.btn-icon.red:hover { background: #fee2e2; }
+ 
+/* ===== PREVIEW ===== */
+.preview-item { padding: 12px 16px !important; margin-bottom: 8px !important; }
+ 
+/* ===== MCQ ===== */
+.mcq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+ 
+/* ===== ANIMATIONS ===== */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in { animation: slideUp 0.35s ease; }
+ 
+/* ===== LOADER ===== */
+.loader { text-align: center; padding: 30px; color: var(--muted); }
 </style>
 </head>
 <body>
-
+ 
 <nav class="navbar">
-  <div class="logo" style="font-weight: 900; letter-spacing: -1px; font-size: 20px;">EduSmart <span style="color:var(--accent)">360</span></div>
+  <div style="font-weight: 900; letter-spacing: -1px; font-size: 20px;">EduSmart <span style="color:var(--accent)">360</span></div>
   <div style="display:flex; align-items:center; gap:15px;">
-    <div style="text-align:right" class="hide-mobile">
+    <div style="text-align:right">
       <div class="u-name" style="font-weight:900; font-size:14px;">--</div>
       <small id="u-dept-sub" style="color:var(--muted); font-size:10px;">--</small>
     </div>
     <div id="u-initials" class="avatar-sm">--</div>
-    <button onclick="logoutUser()" style="background:var(--red); color:white; border:none; padding:8px 15px; border-radius:10px; font-size:12px; cursor:pointer">Logout</button>
+    <button onclick="logoutUser()" style="background:var(--red); color:white; border:none; padding:8px 15px; border-radius:10px; font-size:12px; cursor:pointer; font-family:inherit; font-weight:600;">Logout</button>
   </div>
 </nav>
-
+ 
 <header class="welcome-card">
-  <div><h1 class="m-0" style="font-size:32px;">Faculty Dashboard</h1><p id="facultyEmail" style="color:var(--muted); margin-top:10px;">--</p></div>
+  <div>
+    <h1 class="m-0" style="font-size:32px;">Faculty Dashboard</h1>
+    <p id="facultyEmail" style="color:var(--muted); margin-top:10px;">--</p>
+  </div>
   <div class="stats-box">
-    <div class="stat-item" style="text-align:center"><h3><span id="statExams">0</span></h3><small style="opacity:0.7">Records</small></div>
-    <div class="stat-item" style="text-align:center"><h3><span id="statGrievances">0</span></h3><small style="opacity:0.7">Tickets</small></div>
+    <div style="text-align:center"><h3 style="margin:0"><span id="statExams">0</span></h3><small style="opacity:0.7">Records</small></div>
+    <div style="text-align:center"><h3 style="margin:0"><span id="statGrievances">0</span></h3><small style="opacity:0.7">Tickets</small></div>
   </div>
 </header>
-
+ 
 <div class="tabs-container">
   <button class="tab-item" onclick="showSection('dashboard')"><i data-lucide="layout-dashboard"></i> Home</button>
   <button class="tab-item" onclick="showSection('exams')"><i data-lucide="plus-circle"></i> Exam Management</button>
   <button class="tab-item" onclick="showSection('results')"><i data-lucide="award"></i> Results</button>
   <button class="tab-item" onclick="showSection('grievance')"><i data-lucide="alert-circle"></i> Grievance</button>
-  <button class="tab-item" onclick="showSection('reevaluation')">
-  <i data-lucide="refresh-cw"></i> Re-Evaluation
-</button>
+  <button class="tab-item" onclick="showSection('reevaluation')"><i data-lucide="refresh-cw"></i> Re-Evaluation</button>
 </div>
-
-<div id="dashboard" class="section-content active">
-
-  <h3 class="m-0 mb-20">Student Management</h3>
-
-  <div class="resp-grid">
-    
-    <div>
-      <h3>Department Students</h3>
-      <div id="studentsDirectory"></div>
-    </div>
-
-    <div id="studentDetailView">
-      <div class="card" style="text-align:center; padding:50px; color:var(--muted)">
-        <i data-lucide="user-search" size="40"></i>
-        <p>Select student to view details.</p>
+ 
+<div class="main-content">
+ 
+  <!-- ========== DASHBOARD ========== -->
+  <div id="dashboard" class="section-content active">
+ 
+    <!-- Student Management Button -->
+    <button class="sm-trigger-btn" onclick="openStudentManagement()">
+      <i data-lucide="users"></i>
+      Student Management
+    </button>
+ 
+    <!-- Student Management Panel (shown on click) -->
+    <div id="studentManagementPanel">
+      <div class="panel-header">
+        <h3 class="m-0">Department Students</h3>
+        <button class="close-panel-btn" onclick="closeStudentManagement()">✕ Close</button>
+      </div>
+      <div class="resp-grid">
+        <div>
+          <div id="studentsDirectory"></div>
+        </div>
+        <div id="studentDetailView">
+          <div class="card" style="text-align:center; padding:50px; color:var(--muted)">
+            <i data-lucide="user-search" size="40"></i>
+            <p>Select a student to view details.</p>
+          </div>
+        </div>
       </div>
     </div>
-
+ 
+    <!-- Exam Activity Feed -->
+    <h3 class="m-0 mb-20" style="margin-top: 10px;">Recent Exam Activity</h3>
+    <div id="examList"></div>
+ 
   </div>
-
-</div>
-
+ 
+  <!-- ========== EXAM MANAGEMENT ========== -->
   <div id="exams" class="section-content">
     <div class="builder-nav">
-        <button class="b-type-btn active-b" onclick="switchBuilderType('online')">Online Test</button>
-        <button class="b-type-btn" onclick="switchBuilderType('offline')">Time Table</button>
-        <button class="b-type-btn" onclick="switchBuilderType('slots')">Slot Generator</button>
-        <button class="b-type-btn" onclick="switchBuilderType('hallticket')">Hall Tickets</button>
+      <button class="b-type-btn active-b" onclick="switchBuilderType('online')">Online Test</button>
+      <button class="b-type-btn" onclick="switchBuilderType('offline')">Time Table</button>
+      <button class="b-type-btn" onclick="switchBuilderType('slots')">Slot Generator</button>
+      <button class="b-type-btn" onclick="switchBuilderType('hallticket')">Hall Tickets</button>
     </div>
-    
+ 
+    <!-- Online Builder -->
     <div id="onlineBuilderArea" class="builder-grid">
-        <div class="card">
-            <h4>Online Exam Setup</h4>
-            <input id="eTitle" placeholder="Exam Name">
-<input id="eDate" type="date">
-
-<label class="mt-10">Test Duration (Minutes)</label>
-<input id="eDuration" type="number" min="1" placeholder="Enter Duration (e.g. 60)">
-            <textarea id="qText" placeholder="Enter Question" rows="2" class="mt-20"></textarea>
-            <div style="display:flex; gap:10px"><select id="qType" onchange="toggleQuestionType()"><option value="subjective">Subjective</option><option value="mcq">MCQ</option></select><input id="qMaxMarks" type="number" value="5"></div>
-            <div id="mcqOptionsContainer" style="display:none">
-                <div class="mcq-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><input id="opt1" placeholder="Option 1"><input id="opt2" placeholder="Option 2"><input id="opt3" placeholder="Option 3"><input id="opt4" placeholder="Option 4"></div>
-                <select id="correctOpt" style="background:#d1fae5"><option value="">Correct Index</option><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option></select>
-            </div>
-            <button class="action-btn w-100 mt-20" onclick="addQuestion()">+ Add to Draft</button>
-            <button class="action-btn w-100 mt-20" style="background:var(--primary)" onclick="publishOnlineExam()">🚀 Publish Test</button>
+      <div class="card">
+        <h4 style="margin-top:0">Online Exam Setup</h4>
+        <input id="eTitle" placeholder="Exam Name">
+        <input id="eDate" type="date">
+        <label style="display:block; margin-top:15px; font-size:13px; font-weight:600; color:var(--muted)">Test Duration (Minutes)</label>
+        <input id="eDuration" type="number" min="1" placeholder="Enter Duration (e.g. 60)">
+        <textarea id="qText" placeholder="Enter Question" rows="2" style="margin-top:20px;"></textarea>
+        <div style="display:flex; gap:10px">
+          <select id="qType" onchange="toggleQuestionType()">
+            <option value="subjective">Subjective</option>
+            <option value="mcq">MCQ</option>
+          </select>
+          <input id="qMaxMarks" type="number" value="5" style="margin-top:0;">
         </div>
-        <div class="card" style="background:#f8fafc; border-style:dashed"><h3>Live Preview</h3><div id="livePreview"></div><div class="mt-20 font-bold">Total Marks: <span id="runningTotal">0</span></div></div>
+        <div id="mcqOptionsContainer" style="display:none; margin-top:10px;">
+          <div class="mcq-grid">
+            <input id="opt1" placeholder="Option 1">
+            <input id="opt2" placeholder="Option 2">
+            <input id="opt3" placeholder="Option 3">
+            <input id="opt4" placeholder="Option 4">
+          </div>
+          <select id="correctOpt" style="background:#d1fae5">
+            <option value="">Correct Index</option>
+            <option value="0">1</option>
+            <option value="1">2</option>
+            <option value="2">3</option>
+            <option value="3">4</option>
+          </select>
+        </div>
+        <button class="action-btn w-100 mt-20" onclick="addQuestion()">+ Add to Draft</button>
+        <button class="action-btn w-100 mt-20" style="background:var(--primary)" onclick="publishOnlineExam()">🚀 Publish Test</button>
+      </div>
+      <div class="card" style="background:#f8fafc; border-style:dashed">
+        <h3 style="margin-top:0">Live Preview</h3>
+        <div id="livePreview"></div>
+        <div class="mt-20" style="font-weight:700;">Total Marks: <span id="runningTotal">0</span></div>
+      </div>
     </div>
-    
+ 
+    <!-- Offline Builder -->
     <div id="offlineBuilderArea" class="builder-grid" style="display:none">
-        <div class="card">
-            <h3>Exam Schedule</h3>
-            <input id="offTitle" placeholder="Subject"><input id="offDate" type="date"><input id="offTime" type="time"><input id="offMarks" type="number" value="100">
-            <button class="action-btn w-100 mt-20" onclick="addScheduleRow()">+ Add Entry</button>
+      <div class="card">
+        <h3 style="margin-top:0">Exam Schedule</h3>
+        <input id="offTitle" placeholder="Subject">
+        <input id="offDate" type="date">
+        <input id="offTime" type="time">
+        <input id="offMarks" type="number" value="100">
+        <button class="action-btn w-100 mt-20" onclick="addScheduleRow()">+ Add Entry</button>
+      </div>
+      <div class="card">
+        <div class="flex-between">
+          <h3 style="margin:0">Draft Table</h3>
+          <input id="offTableName" placeholder="Table Name" style="width:150px; margin:0">
         </div>
-        <div class="card">
-            <div class="flex-between"><h3>Draft Table</h3><input id="offTableName" placeholder="Table Name" style="width:150px; margin:0"></div>
-            <table class="schedule-table"><thead><tr><th>Subject</th><th>Marks</th><th></th></tr></thead><tbody id="offlineTableBody"></tbody></table>
-            <button class="action-btn w-100 mt-20" style="background:var(--orange)" onclick="publishFullTimeTable()">📢 Publish Schedule</button>
-        </div>
+        <table class="schedule-table">
+          <thead><tr><th>#</th><th>Subject</th><th>Marks</th><th></th></tr></thead>
+          <tbody id="offlineTableBody"></tbody>
+        </table>
+        <button class="action-btn w-100 mt-20" style="background:var(--orange)" onclick="publishFullTimeTable()">📢 Publish Schedule</button>
+      </div>
     </div>
-
+ 
+    <!-- Slot Generator -->
     <div id="slotGeneratorArea" style="display:none;">
-        <div class="card">
-            <h3>Randomized Bench Generator</h3>
-            <div class="builder-grid mt-20">
-                <div><label>Select Exam</label><select id="slotExamSelect"></select></div>
-                <div><label>Classroom</label><input type="text" id="classroomName" placeholder="Room Number"></div>
-                <div><label>Strength</label><input type="number" id="classStrength" value="30"></div>
-                <div><label>Time Interval</label><input type="number" id="slotInterval" value="60"></div>
-            </div>
-            <button class="action-btn w-100 mt-20" onclick="generateSlots()"><i data-lucide="zap"></i> Link Assignments</button>
-            <div id="slotResults"></div>
+      <div class="card">
+        <h3 style="margin-top:0">Randomized Bench Generator</h3>
+        <div class="builder-grid mt-20">
+          <div><label style="font-size:13px; font-weight:600; color:var(--muted)">Select Exam</label><select id="slotExamSelect"></select></div>
+          <div><label style="font-size:13px; font-weight:600; color:var(--muted)">Classroom</label><input type="text" id="classroomName" placeholder="Room Number"></div>
+          <div><label style="font-size:13px; font-weight:600; color:var(--muted)">Strength</label><input type="number" id="classStrength" value="30"></div>
+          <div><label style="font-size:13px; font-weight:600; color:var(--muted)">Time Interval (min)</label><input type="number" id="slotInterval" value="60"></div>
         </div>
+        <button class="action-btn w-100 mt-20" onclick="generateSlots()"><i data-lucide="zap"></i> Link Assignments</button>
+        <div id="slotResults"></div>
+      </div>
     </div>
-
+ 
+    <!-- Hall Ticket -->
     <div id="hallTicketArea" style="display:none;">
-        <div class="card">
-            <h3>Hall Ticket Generator</h3>
-            <div class="builder-grid mt-20">
-                <div><label>Exam Series</label><input type="text" id="htSeries" placeholder="End Sem 2026">
-                <button class="action-btn w-100 mt-20" style="background:var(--green)" onclick="issueHallTickets()">Issue Hall Tickets</button></div>
-                <div><label>Select Subjects</label><div id="htSubjectList" style="max-height:300px; overflow-y:auto; padding:10px; background:var(--bg); border-radius:12px;" class="mt-10"></div></div>
-            </div>
+      <div class="card">
+        <h3 style="margin-top:0">Hall Ticket Generator</h3>
+        <div class="builder-grid mt-20">
+          <div>
+            <label style="font-size:13px; font-weight:600; color:var(--muted)">Exam Series</label>
+            <input type="text" id="htSeries" placeholder="End Sem 2026">
+            <button class="action-btn w-100 mt-20" style="background:var(--green)" onclick="issueHallTickets()">Issue Hall Tickets</button>
+          </div>
+          <div>
+            <label style="font-size:13px; font-weight:600; color:var(--muted)">Select Subjects</label>
+            <div id="htSubjectList" style="max-height:300px; overflow-y:auto; padding:10px; background:var(--bg); border-radius:12px; margin-top:10px;"></div>
+          </div>
         </div>
+      </div>
     </div>
   </div>
-
+ 
+  <!-- ========== RESULTS ========== -->
   <div id="results" class="section-content">
     <h3>Result Publisher (UID Based Evaluation)</h3>
-
     <div class="card">
-
-        <label>Enter Student UID</label>
-        <div style="display:flex; gap:10px;">
-            <input type="text" id="resStudentUID" placeholder="Enter Student UID">
-            <button class="action-btn" onclick="searchStudentByUID()">Search</button>
-        </div>
-
-        <div id="selectedStudentInfo" style="margin-top:15px;"></div>
-
-        <label class="mt-20">Select Subject</label>
-        <select id="resExamSelect" disabled onchange="onExamChangeResults(); checkIfResultExists();">
-            <option value="">Search UID first</option>
-        </select>
-
-        <label class="mt-20">Total Questions</label>
-        <input type="number" id="resQuestionCount" placeholder="Enter total questions">
-
-        <button class="action-btn w-100 mt-20" onclick="generateQuestionFields()">
-            Generate Questions
-        </button>
-
+      <label style="font-weight:600; font-size:14px;">Enter Student UID</label>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <input type="text" id="resStudentUID" placeholder="Enter Student UID" style="margin-top:0;">
+        <button class="action-btn" style="white-space:nowrap;" onclick="searchStudentByUID()">Search</button>
+      </div>
+      <div id="selectedStudentInfo"></div>
+ 
+      <label style="font-weight:600; font-size:14px; display:block; margin-top:20px;">Select Subject</label>
+      <select id="resExamSelect" disabled onchange="onExamChangeResults(); checkIfResultExists();">
+        <option value="">Search UID first</option>
+      </select>
+ 
+      <label style="font-weight:600; font-size:14px; display:block; margin-top:20px;">Total Questions</label>
+      <input type="number" id="resQuestionCount" placeholder="Enter total questions (for offline exams)">
+      <button class="action-btn w-100 mt-20" onclick="generateQuestionFields()">Generate Questions</button>
     </div>
-
-    
-
-<div id="questionMarksContainer"></div>
-
-<button class="action-btn w-100 mt-20" 
-        style="background:var(--green)" 
-        onclick="publishExamResult()">
-    Publish Result
-</button>
+ 
+    <div id="questionMarksContainer"></div>
+ 
+    <button class="action-btn w-100 mt-20" style="background:var(--green)" onclick="publishExamResult()">
+      Publish Result
+    </button>
   </div>
-
+ 
+  <!-- ========== RE-EVALUATION ========== -->
   <div id="reevaluation" class="section-content">
     <h3 class="m-0 mb-20">Re-Evaluation Control Panel</h3>
-
     <div class="card">
-        <h4>Pending Requests</h4>
-        <div id="reevaluationContainer">
-            <div style="text-align:center; padding:40px; color:var(--muted)">
-                Loading requests...
-            </div>
-        </div>
+      <h4 style="margin-top:0">Pending Requests</h4>
+      <div id="reevaluationContainer">
+        <div style="text-align:center; padding:40px; color:var(--muted)">Loading requests...</div>
+      </div>
     </div>
-</div>
-
-  <div id="grievance" class="section-content"><h3>Resolution Hub</h3><div id="grievanceContainer"></div></div>
-</div>
-
+  </div>
+ 
+  <!-- ========== GRIEVANCE ========== -->
+  <div id="grievance" class="section-content">
+    <h3>Resolution Hub</h3>
+    <div id="grievanceContainer"></div>
+  </div>
+ 
+</div><!-- end .main-content -->
+ 
+<!-- ===== RECORD VIEWER MODAL ===== -->
 <div id="recordViewerModal" class="modal-overlay">
-    <div class="modal-card">
-        <div class="flex-between mb-20"><h3 id="v-student-name">History</h3><i data-lucide="x-circle" onclick="closeRecords()" class="clickable text-muted"></i></div>
-        <div id="recordsContainer"></div>
+  <div class="modal-card">
+    <div class="flex-between mb-20">
+      <h3 id="v-student-name" style="margin:0;">History</h3>
+      <i data-lucide="x-circle" onclick="closeRecords()" class="clickable text-muted" style="cursor:pointer;"></i>
     </div>
+    <div id="recordsContainer"></div>
+  </div>
 </div>
-
-
+ 
 <script>lucide.createIcons();</script>
 </body>
 </html>
