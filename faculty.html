@@ -51,7 +51,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("facultyEmail").innerText = user.email;
 
   await refreshDashboard();
-  showSection('dashboard'); 
+  await showSection('dashboard'); 
 });
 
 async function refreshDashboard() {
@@ -66,7 +66,7 @@ async function refreshDashboard() {
 }
 
 /* ================= NAVIGATION ================= */
-window.showSection = function(id) {
+window.showSection = async function(id) {
   document.querySelectorAll(".section-content").forEach(sec => sec.classList.remove("active"));
   
   const target = document.getElementById(id);
@@ -79,7 +79,7 @@ window.showSection = function(id) {
 
   // 🔥 KEY LINE (THIS FIXES EVERYTHING)
   if(id === "dashboard") {
-      loadStudents();
+      await loadStudents();
   }
 
   lucide.createIcons();
