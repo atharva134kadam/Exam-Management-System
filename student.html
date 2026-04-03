@@ -2337,28 +2337,6 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
   </div>
  
 </div><!-- /lms section -->
- 
- 
-<!-- ================================================================
-     LMS COURSE PLAYER OVERLAY  (add before </body>)
-================================================================ -->
-<div id="lmsCoursePlayer" class="lms-player-overlay">
-  <div class="lms-player-topbar">
-    <button class="lms-player-back" onclick="lmsClosePlayer()">
-      <i data-lucide="arrow-left" size="16"></i>
-    </button>
-    <div class="lms-player-course-title" id="lmsPlayerCourseTitle">Course Title</div>
-    <div class="lms-player-progress-pill" id="lmsPlayerProgressPill">0 / 0 lessons</div>
-    <button class="lms-player-complete-btn" id="lmsMarkCompleteBtn" onclick="lmsMarkLessonComplete()">
-      <i data-lucide="check" size="14"></i> Mark Complete
-    </button>
-  </div>
-  <div class="lms-player-body">
-    <div class="lms-player-sidebar" id="lmsPlayerSidebar"></div>
-    <div class="lms-player-main" id="lmsPlayerMain"></div>
-  </div>
-</div>
- 
 
     <!-- ========== GRIEVANCE SECTION ========== -->
     <div id="grievance" class="section-content">
@@ -2408,8 +2386,11 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
 <!-- ====== FIREBASE + MAIN SCRIPTS ====== -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, collection, getDocs, query, where, setDoc, addDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, query,
+  where, setDoc, serverTimestamp, updateDoc
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
  
 const firebaseConfig = {
   apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
@@ -2435,6 +2416,17 @@ let portfolioSkills = [];
 // ====== Timetable state ======
 let timetableData = null;
 let ttClockInterval = null;
+
+// ─── LMS State ───
+let lmsAllCourses    = [];    // all published courses for dept
+let lmsEnrolledIds   = [];    // course IDs user enrolled in
+let lmsProgressMap   = {};    // { courseId: { completedLessons: Set<"wi_li"> } }
+let lmsCurrentCourse = null;  // course object being played
+let lmsCurrentLesson = null;  // { wi, li }
+let lmsCurrentUser   = null;
+let lmsStudentData   = null;
+let lmsDiffFilter    = "";
+let lmsViewMode      = "grid";
 
 // ====== Leave Management State ======
 let selectedLeaveType = "Medical";
@@ -3963,7 +3955,641 @@ window.addEventListener("DOMContentLoaded", () => {
   setTimeout(renderCharts, 200);
   lucide.createIcons();
 });
+
+// ─── Colors for difficulty ───
+const DIFF_COLORS = {
+  Beginner:     { bg: "#d1fae5", color: "#065f46" },
+  Intermediate: { bg: "#fef3c7", color: "#92400e" },
+  Advanced:     { bg: "#fee2e2", color: "#991b1b" },
+};
+const TYPE_ICONS  = { video:"youtube", link:"link", article:"file-text", quiz:"help-circle", assignment:"clipboard-list" };
+const TYPE_COLORS = { video:"#dc2626", link:"#2563eb", article:"#7c3aed", quiz:"#d97706", assignment:"#059669" };
+ 
+// ─── Auth ───
+onAuthStateChanged(auth, async user => {
+  if (!user) return;
+  lmsCurrentUser = user;
+  const snap = await getDoc(doc(db, "users", user.uid));
+  if (snap.exists()) lmsStudentData = snap.data();
+  await lmsLoadAll();
+  lucide.createIcons();
+});
+ 
+// ─── Load Everything ───
+async function lmsLoadAll() {
+  if (!lmsCurrentUser || !lmsStudentData) return;
+  await lmsLoadProgress();
+  await lmsLoadCourses();
+  lmsUpdateHeroStats();
+}
+ 
+async function lmsLoadProgress() {
+  try {
+    const snap = await getDoc(doc(db, "lms_progress", lmsCurrentUser.uid));
+    if (snap.exists()) {
+      const data = snap.data();
+      lmsEnrolledIds = data.enrolledIds || [];
+      // completedLessons stored as array of strings "wi_li"
+      const raw = data.completedLessons || {};
+      lmsProgressMap = {};
+      Object.entries(raw).forEach(([courseId, lessons]) => {
+        lmsProgressMap[courseId] = { completedLessons: new Set(lessons) };
+      });
+    }
+  } catch(e) { console.error("Progress load", e); }
+}
+ 
+async function lmsLoadCourses() {
+  try {
+    const q = query(
+      collection(db, "lms_courses"),
+      where("department", "==", lmsStudentData.department),
+      where("isPublished", "==", true)
+    );
+    const snap = await getDocs(q);
+    lmsAllCourses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    lmsAllCourses.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    lmsRenderExplore();
+    lmsRenderMyCourses();
+    lmsRenderCertificates();
+    lmsUpdateMiniStats();
+  } catch(e) {
+    console.error("Course load", e);
+    document.getElementById("lmsCourseGrid").innerHTML =
+      `<div class="lms-empty" style="grid-column:1/-1;"><div class="lms-empty-icon">⚠️</div><p>Failed to load courses. Please refresh.</p></div>`;
+  }
+}
+ 
+function lmsUpdateHeroStats() {
+  const enrolled   = lmsEnrolledIds.length;
+  const completed  = lmsEnrolledIds.filter(id => lmsCourseProgress(id) === 100).length;
+  const hours      = lmsAllCourses
+    .filter(c => lmsEnrolledIds.includes(c.id))
+    .reduce((s, c) => s + parseFloat(c.estimatedHours || 0), 0);
+  setEl("lmsStatEnrolled",  enrolled);
+  setEl("lmsStatCompleted", completed);
+  setEl("lmsStatHours",     hours > 0 ? Math.round(hours) + "h" : "—");
+}
+ 
+function lmsUpdateMiniStats() {
+  const subjects = new Set(lmsAllCourses.map(c => c.subject)).size;
+  const totalLessons = lmsAllCourses.reduce((s, c) => s + (c.totalLessons || 0), 0);
+  setEl("lmsExpTotal",     lmsAllCourses.length);
+  setEl("lmsExpPublished", lmsAllCourses.length);
+  setEl("lmsExpSubjects",  subjects);
+  setEl("lmsExpLessons",   totalLessons);
+}
+ 
+function setEl(id, val) { const el = document.getElementById(id); if (el) el.innerText = val; }
+ 
+// ─── Progress Helper ───
+function lmsCourseProgress(courseId) {
+  const course = lmsAllCourses.find(c => c.id === courseId);
+  if (!course) return 0;
+  const total = course.totalLessons || 0;
+  if (total === 0) return 0;
+  const done = (lmsProgressMap[courseId]?.completedLessons?.size) || 0;
+  return Math.round((done / total) * 100);
+}
+ 
+function lmsIsEnrolled(courseId) { return lmsEnrolledIds.includes(courseId); }
+ 
+// ─── RENDER: Explore ───
+function lmsRenderExplore() {
+  const grid = document.getElementById("lmsCourseGrid");
+  const search = (document.getElementById("lmsSearchInput")?.value || "").toLowerCase();
+ 
+  const filtered = lmsAllCourses.filter(c => {
+    const matchDiff   = !lmsDiffFilter || c.difficulty === lmsDiffFilter;
+    const matchSearch = !search ||
+      c.title.toLowerCase().includes(search) ||
+      (c.subject||"").toLowerCase().includes(search) ||
+      (c.description||"").toLowerCase().includes(search) ||
+      (c.tags||[]).some(t => t.toLowerCase().includes(search));
+    return matchDiff && matchSearch;
+  });
+ 
+  if (filtered.length === 0) {
+    grid.innerHTML = `<div class="lms-empty" style="grid-column:1/-1;">
+      <div class="lms-empty-icon">🔍</div>
+      <h3 style="color:#1e293b;margin-bottom:8px;">No courses found</h3>
+      <p>Try adjusting your search or filters.</p>
+    </div>`;
+    lucide.createIcons(); return;
+  }
+ 
+  grid.className = `lms-course-grid${lmsViewMode === "list" ? " list-view" : ""}`;
+  grid.innerHTML = filtered.map(c => lmsCourseCardHTML(c)).join("");
+  lucide.createIcons();
+}
+ 
+function lmsCourseCardHTML(c) {
+  const enrolled = lmsIsEnrolled(c.id);
+  const pct = lmsCourseProgress(c.id);
+  const dc = DIFF_COLORS[c.difficulty] || DIFF_COLORS.Beginner;
+  const tagHtml = (c.tags || []).slice(0, 3).map(t => `<span class="lms-tag">${t}</span>`).join("");
+  const thumbStyle = c.thumbnail
+    ? `background-image:url('${c.thumbnail}');background-size:cover;background-position:center;`
+    : `background:linear-gradient(135deg,#0d1117,#1e3a5f);`;
+  const initials = (c.createdByName || "F").split(" ").map(n=>n[0]).join("").toUpperCase();
+ 
+  return `
+    <div class="lms-course-card" onclick="lmsOpenCourse('${c.id}')">
+      <div class="lms-course-thumb" style="${thumbStyle}">
+        <div class="lms-course-thumb-overlay">
+          <div class="lms-play-btn"><i data-lucide="play" size="16"></i></div>
+          <span class="lms-diff-tag" style="background:${dc.bg};color:${dc.color};">${c.difficulty}</span>
+        </div>
+        ${enrolled && pct > 0 ? `
+          <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:rgba(255,255,255,0.15);">
+            <div style="height:100%;width:${pct}%;background:#4ade80;transition:width 0.8s;"></div>
+          </div>` : ""}
+      </div>
+      <div class="lms-course-body">
+        <div class="lms-course-tags">${tagHtml}</div>
+        <div class="lms-course-title">${c.title}</div>
+        ${c.description ? `<div class="lms-course-desc">${c.description.slice(0, 90)}${c.description.length > 90 ? "…" : ""}</div>` : ""}
+        <div class="lms-course-meta-row">
+          <span><i data-lucide="book" size="11"></i>${c.subject}</span>
+          <span><i data-lucide="layout-list" size="11"></i>${c.totalWeeks||0} weeks</span>
+          <span><i data-lucide="play-circle" size="11"></i>${c.totalLessons||0} lessons</span>
+          <span><i data-lucide="clock" size="11"></i>${c.estimatedHours||"—"} hrs</span>
+        </div>
+        ${enrolled && pct > 0 ? `
+          <div style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#64748b;margin-bottom:5px;">
+              <span>Progress</span><span style="color:${pct===100?'#22c55e':'#2563eb'}">${pct}%</span>
+            </div>
+            <div class="lms-progress-wrap"><div class="lms-progress-bar" style="width:${pct}%;background:${pct===100?'#22c55e':'linear-gradient(90deg,#2563eb,#6366f1)'};"></div></div>
+          </div>` : ""}
+        <div class="lms-course-footer">
+          <div class="lms-faculty-info">
+            <div class="lms-faculty-avatar">${initials}</div>
+            <div class="lms-faculty-name">${c.createdByName || "Faculty"}</div>
+          </div>
+          ${enrolled
+            ? `<button class="lms-enrolled-btn" onclick="event.stopPropagation();lmsOpenCourse('${c.id}')">
+                <i data-lucide="${pct===100?'award':'play'}" size="12"></i>
+                ${pct===100?"Review":"Resume"}
+              </button>`
+            : `<button class="lms-enroll-btn" onclick="event.stopPropagation();lmsEnroll('${c.id}')">
+                <i data-lucide="plus" size="12"></i> Enroll
+              </button>`}
+        </div>
+      </div>
+    </div>`;
+}
+ 
+// ─── RENDER: My Courses ───
+function lmsRenderMyCourses() {
+  const container = document.getElementById("lmsMyCoursesContainer");
+  const enrolled  = lmsAllCourses.filter(c => lmsIsEnrolled(c.id));
+ 
+  // Continue Learning row
+  const inProgress = enrolled.filter(c => { const p = lmsCourseProgress(c.id); return p > 0 && p < 100; });
+  const continueSection = document.getElementById("lmsContinueSection");
+  const continueRow     = document.getElementById("lmsContinueRow");
+  const continueCount   = document.getElementById("lmsContinueCount");
+ 
+  if (inProgress.length > 0) {
+    continueSection.style.display = "block";
+    if (continueCount) continueCount.innerText = inProgress.length;
+    continueRow.innerHTML = inProgress.map(c => {
+      const pct = lmsCourseProgress(c.id);
+      const done = lmsProgressMap[c.id]?.completedLessons?.size || 0;
+      const thumbStyle = c.thumbnail
+        ? `background-image:url('${c.thumbnail}');background-size:cover;background-position:center;`
+        : `background:linear-gradient(135deg,#0d1117,#1e3a5f);`;
+      return `
+        <div class="lms-continue-card" onclick="lmsOpenCourse('${c.id}')">
+          <div class="lms-continue-thumb" style="${thumbStyle}">
+            <div class="lms-continue-thumb-overlay">
+              <span style="color:white;font-size:11px;font-weight:700;background:rgba(0,0,0,0.4);padding:4px 10px;border-radius:8px;">${c.subject}</span>
+            </div>
+          </div>
+          <div class="lms-continue-body">
+            <div class="lms-continue-subject">${c.subject} · Sem ${c.semester}</div>
+            <div class="lms-continue-title">${c.title}</div>
+            <div class="lms-progress-wrap"><div class="lms-progress-bar" style="width:${pct}%;"></div></div>
+            <div class="lms-progress-label"><span>${done} lessons done</span><span>${pct}%</span></div>
+            <button class="lms-resume-btn"><i data-lucide="play" size="13"></i> Continue Learning</button>
+          </div>
+        </div>`;
+    }).join("");
+  } else {
+    continueSection.style.display = "none";
+  }
+ 
+  if (enrolled.length === 0) {
+    container.innerHTML = `
+      <div class="lms-empty">
+        <div class="lms-empty-icon">📚</div>
+        <h3 style="color:#1e293b;margin-bottom:8px;">No courses yet</h3>
+        <p>Go to <b>Explore Courses</b> to enroll in your first course.</p>
+        <button onclick="lmsSwitchTab('explore',document.getElementById('lmstab-explore'))"
+          style="margin-top:16px;background:#2563eb;color:white;border:none;padding:12px 24px;border-radius:12px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;">
+          Explore Courses →
+        </button>
+      </div>`;
+    lucide.createIcons(); return;
+  }
+ 
+  container.innerHTML = `<div class="lms-course-grid">${enrolled.map(c => lmsCourseCardHTML(c)).join("")}</div>`;
+  lucide.createIcons();
+}
+ 
+// ─── RENDER: Certificates ───
+function lmsRenderCertificates() {
+  const container = document.getElementById("lmsCertContainer");
+  const completed = lmsAllCourses.filter(c => lmsIsEnrolled(c.id) && lmsCourseProgress(c.id) === 100);
+  if (completed.length === 0) {
+    container.innerHTML = `
+      <div class="lms-empty">
+        <div class="lms-empty-icon">🎓</div>
+        <h3 style="color:#1e293b;margin-bottom:8px;">No certificates yet</h3>
+        <p>Complete a course to earn your first certificate!</p>
+      </div>`;
+    lucide.createIcons(); return;
+  }
+  container.innerHTML = `<div class="lms-cert-grid">
+    ${completed.map(c => `
+      <div class="lms-cert-card">
+        <div class="lms-cert-title">${c.title}</div>
+        <div class="lms-cert-date">${c.subject} · Sem ${c.semester}</div>
+        <button class="lms-cert-btn" onclick="lmsDownloadCert('${c.id}')">
+          <i data-lucide="download" size="12"></i> Download Certificate
+        </button>
+      </div>`).join("")}
+  </div>`;
+  lucide.createIcons();
+}
+ 
+// ─── ENROLL ───
+window.lmsEnroll = async function(courseId) {
+  if (!lmsCurrentUser) return;
+  if (lmsEnrolledIds.includes(courseId)) { lmsOpenCourse(courseId); return; }
+  lmsEnrolledIds.push(courseId);
+  if (!lmsProgressMap[courseId]) lmsProgressMap[courseId] = { completedLessons: new Set() };
+  await lmsSaveProgress();
+  lmsUpdateHeroStats();
+  lmsRenderExplore();
+  lmsOpenCourse(courseId);
+};
+ 
+// ─── OPEN COURSE PLAYER ───
+window.lmsOpenCourse = async function(courseId) {
+  const course = lmsAllCourses.find(c => c.id === courseId);
+  if (!course) return;
+ 
+  // Auto-enroll if needed
+  if (!lmsIsEnrolled(courseId)) { await lmsEnroll(courseId); return; }
+ 
+  lmsCurrentCourse = course;
+  if (!lmsProgressMap[courseId]) lmsProgressMap[courseId] = { completedLessons: new Set() };
+ 
+  // Open first incomplete lesson
+  let targetWi = 0, targetLi = 0;
+  outer: for (let wi = 0; wi < (course.weeks||[]).length; wi++) {
+    for (let li = 0; li < (course.weeks[wi].lessons||[]).length; li++) {
+      if (!lmsProgressMap[courseId].completedLessons.has(`${wi}_${li}`)) {
+        targetWi = wi; targetLi = li; break outer;
+      }
+    }
+  }
+  lmsCurrentLesson = { wi: targetWi, li: targetLi };
+ 
+  const overlay = document.getElementById("lmsCoursePlayer");
+  overlay.classList.add("open");
+  document.body.style.overflow = "hidden";
+  document.getElementById("lmsPlayerCourseTitle").innerText = course.title;
+  lmsRenderPlayerSidebar();
+  lmsRenderPlayerLesson();
+  lucide.createIcons();
+};
+ 
+window.lmsClosePlayer = function() {
+  document.getElementById("lmsCoursePlayer").classList.remove("open");
+  document.body.style.overflow = "";
+  lmsRenderMyCourses();
+  lmsRenderExplore();
+  lmsRenderCertificates();
+  lmsUpdateHeroStats();
+};
+ 
+// ─── RENDER SIDEBAR ───
+function lmsRenderPlayerSidebar() {
+  const sidebar = document.getElementById("lmsPlayerSidebar");
+  const course  = lmsCurrentCourse;
+  const { wi: curWi, li: curLi } = lmsCurrentLesson;
+  const progress = lmsProgressMap[course.id];
+ 
+  let html = "";
+  (course.weeks || []).forEach((week, wi) => {
+    const weekLessons = week.lessons || [];
+    const weekDone = weekLessons.filter((_, li) => progress.completedLessons.has(`${wi}_${li}`)).length;
+    html += `
+      <div class="lms-player-week-header">
+        <div class="lms-player-week-title">${week.title}</div>
+        <span style="font-size:10px;color:rgba(255,255,255,0.35);font-weight:700;">${weekDone}/${weekLessons.length}</span>
+      </div>`;
+    weekLessons.forEach((lesson, li) => {
+      const isDone   = progress.completedLessons.has(`${wi}_${li}`);
+      const isActive = wi === curWi && li === curLi;
+      const tc = TYPE_COLORS[lesson.type] || "#64748b";
+      html += `
+        <div class="lms-player-lesson ${isActive ? "active" : ""} ${isDone && !isActive ? "completed" : ""}"
+          onclick="lmsNavigateLesson(${wi},${li})">
+          <div class="lms-lesson-icon" style="background:${tc}18;color:${tc};">
+            <i data-lucide="${TYPE_ICONS[lesson.type]||'link'}" size="14"></i>
+          </div>
+          <div class="lms-player-lesson-info">
+            <div class="lms-player-lesson-title">${lesson.title}</div>
+            <div class="lms-player-lesson-meta">${lesson.type.charAt(0).toUpperCase()+lesson.type.slice(1)}${lesson.duration ? " · "+lesson.duration : ""}</div>
+          </div>
+          ${isDone ? `<div class="lms-done-check"><i data-lucide="check" size="10" style="color:white;"></i></div>` : ""}
+        </div>`;
+    });
+  });
+  sidebar.innerHTML = html;
+ 
+  // Update progress pill
+  const total = lmsCurrentCourse.totalLessons || 0;
+  const done  = progress.completedLessons.size;
+  document.getElementById("lmsPlayerProgressPill").innerText = `${done} / ${total} lessons`;
+  lucide.createIcons();
+}
+ 
+// ─── RENDER LESSON CONTENT ───
+function lmsRenderPlayerLesson() {
+  const course  = lmsCurrentCourse;
+  const { wi, li } = lmsCurrentLesson;
+  const week    = course.weeks?.[wi];
+  const lesson  = week?.lessons?.[li];
+  if (!lesson) return;
+ 
+  const main    = document.getElementById("lmsPlayerMain");
+  const tc      = TYPE_COLORS[lesson.type] || "#64748b";
+  const progress = lmsProgressMap[course.id];
+  const isDone  = progress.completedLessons.has(`${wi}_${li}`);
+ 
+  // Determine prev/next
+  const allLessons = [];
+  (course.weeks || []).forEach((w, wIdx) => (w.lessons || []).forEach((l, lIdx) => allLessons.push({ wi: wIdx, li: lIdx, lesson: l })));
+  const curIdx  = allLessons.findIndex(x => x.wi === wi && x.li === li);
+  const hasPrev = curIdx > 0;
+  const hasNext = curIdx < allLessons.length - 1;
+ 
+  let contentHTML = "";
+  if (lesson.type === "video") {
+    contentHTML = `
+      <div class="lms-video-area">
+        ${lesson.url
+          ? `<iframe src="${lesson.url}" allowfullscreen allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" loading="lazy"></iframe>`
+          : `<div class="lms-video-placeholder">
+              <div class="lms-video-placeholder-icon"><i data-lucide="video-off" size="28" style="opacity:0.5;"></i></div>
+              <p style="font-size:13px;">Video not available</p>
+            </div>`}
+      </div>`;
+  } else {
+    contentHTML = `
+      <div class="lms-resource-area">
+        <a href="${lesson.url}" target="_blank" class="lms-resource-card">
+          <div class="lms-resource-icon-box" style="background:${tc}15;color:${tc};">
+            <i data-lucide="${TYPE_ICONS[lesson.type]||'link'}" size="22"></i>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:800;font-size:15px;color:white;margin-bottom:4px;">Open ${lesson.type.charAt(0).toUpperCase()+lesson.type.slice(1)}</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.4);word-break:break-all;">${lesson.url}</div>
+          </div>
+          <i data-lucide="external-link" size="16" style="color:rgba(255,255,255,0.3);flex-shrink:0;"></i>
+        </a>
+      </div>`;
+  }
+ 
+  main.innerHTML = `
+    ${contentHTML}
+    <div class="lms-lesson-detail-area">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:4px 12px;border-radius:100px;background:${tc}20;color:${tc};text-transform:uppercase;">
+          <i data-lucide="${TYPE_ICONS[lesson.type]||'link'}" size="11"></i> ${lesson.type}
+        </span>
+        ${isDone ? `<span style="display:inline-flex;align-items:center;gap:5px;background:#d1fae520;color:#4ade80;font-size:11px;font-weight:800;padding:4px 12px;border-radius:100px;"><i data-lucide="check-circle" size="11"></i> Completed</span>` : ""}
+      </div>
+      <h2 class="lms-lesson-detail-title">${lesson.title}</h2>
+      <div class="lms-lesson-detail-meta">
+        <span><i data-lucide="layers" size="12"></i> Week ${wi + 1}: ${week.title}</span>
+        ${lesson.duration ? `<span><i data-lucide="clock" size="12"></i>${lesson.duration}</span>` : ""}
+        <span><i data-lucide="list" size="12"></i>Lesson ${li + 1} of ${week.lessons.length}</span>
+      </div>
+      ${lesson.description ? `<div class="lms-lesson-desc">${lesson.description}</div>` : ""}
+      <div class="lms-lesson-nav">
+        ${hasPrev ? `<button class="lms-prev-btn" onclick="lmsNavigateLesson(${allLessons[curIdx-1].wi},${allLessons[curIdx-1].li})"><i data-lucide="arrow-left" size="14"></i> Previous</button>` : ""}
+        ${!isDone
+          ? `<button class="lms-next-btn" onclick="lmsMarkAndNext(${hasNext},${hasNext?allLessons[curIdx+1].wi:-1},${hasNext?allLessons[curIdx+1].li:-1})">
+              <i data-lucide="check" size="14"></i> Mark Done${hasNext?" & Next":""}
+             </button>`
+          : hasNext
+            ? `<button class="lms-next-btn" onclick="lmsNavigateLesson(${allLessons[curIdx+1].wi},${allLessons[curIdx+1].li})">
+                Next Lesson <i data-lucide="arrow-right" size="14"></i>
+               </button>`
+            : `<div style="color:#4ade80;font-weight:800;font-size:14px;display:flex;align-items:center;gap:8px;padding:12px;">
+                🎉 You've completed this course!
+               </div>`}
+      </div>
+    </div>`;
+ 
+  // Update complete button
+  const completeBtn = document.getElementById("lmsMarkCompleteBtn");
+  if (completeBtn) {
+    completeBtn.innerHTML = isDone
+      ? `<i data-lucide="check-circle" size="14"></i> Completed`
+      : `<i data-lucide="check" size="14"></i> Mark Complete`;
+    completeBtn.style.background = isDone ? "#059669" : "#22c55e";
+  }
+ 
+  lucide.createIcons();
+}
+ 
+window.lmsNavigateLesson = function(wi, li) {
+  lmsCurrentLesson = { wi, li };
+  lmsRenderPlayerSidebar();
+  lmsRenderPlayerLesson();
+  document.getElementById("lmsPlayerMain").scrollTo({ top: 0, behavior: "smooth" });
+};
+ 
+window.lmsMarkLessonComplete = async function() {
+  const { wi, li } = lmsCurrentLesson;
+  const key = `${wi}_${li}`;
+  const progress = lmsProgressMap[lmsCurrentCourse.id];
+  if (progress.completedLessons.has(key)) return;
+  progress.completedLessons.add(key);
+  await lmsSaveProgress();
+  lmsRenderPlayerSidebar();
+  lmsRenderPlayerLesson();
+  // Check if course complete
+  const total = lmsCurrentCourse.totalLessons || 0;
+  if (progress.completedLessons.size >= total) {
+    setTimeout(() => {
+      if (confirm(`🎉 Congratulations! You've completed "${lmsCurrentCourse.title}"!\n\nA certificate has been earned. Close the player to view it.`)) {
+        lmsClosePlayer();
+        setTimeout(() => lmsSwitchTab("certificates", document.getElementById("lmstab-certificates")), 300);
+      }
+    }, 400);
+  }
+};
+ 
+window.lmsMarkAndNext = async function(hasNext, nextWi, nextLi) {
+  await lmsMarkLessonComplete();
+  if (hasNext && nextWi >= 0) {
+    setTimeout(() => lmsNavigateLesson(nextWi, nextLi), 300);
+  }
+};
+ 
+// ─── SAVE PROGRESS to Firestore ───
+async function lmsSaveProgress() {
+  if (!lmsCurrentUser) return;
+  try {
+    const completedData = {};
+    Object.entries(lmsProgressMap).forEach(([courseId, data]) => {
+      completedData[courseId] = [...data.completedLessons];
+    });
+    await setDoc(doc(db, "lms_progress", lmsCurrentUser.uid), {
+      enrolledIds: lmsEnrolledIds,
+      completedLessons: completedData,
+      updatedAt: serverTimestamp()
+    });
+  } catch(e) { console.error("Save progress error:", e); }
+}
+ 
+// ─── CERTIFICATE DOWNLOAD ───
+window.lmsDownloadCert = function(courseId) {
+  const course = lmsAllCourses.find(c => c.id === courseId);
+  if (!course) return;
+  const name = lmsStudentData?.name || "Student";
+  const dept = lmsStudentData?.department || "";
+  const prn  = lmsStudentData?.prn || "";
+  const dateStr = new Date().toLocaleDateString("en-IN", { day:"2-digit", month:"long", year:"numeric" });
+ 
+  // Build a simple printable cert in a new window
+  const certWindow = window.open("", "_blank");
+  certWindow.document.write(`<!DOCTYPE html><html><head><title>Certificate</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0;padding:0;box-sizing:border-box; }
+    body { background:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px; font-family:'DM Sans',sans-serif; }
+    .cert {
+      width:850px;min-height:580px;background:white;border-radius:28px;
+      padding:60px 80px;text-align:center;
+      border:2px solid #e2e8f0;
+      box-shadow:0 40px 80px rgba(0,0,0,0.1);
+      position:relative;overflow:hidden;
+    }
+    .cert::before {
+      content:'';position:absolute;inset:16px;border:2px solid #dbeafe;border-radius:18px;pointer-events:none;
+    }
+    .cert-top { color:#2563eb;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:3px;margin-bottom:20px; }
+    .cert-logo { font-family:'Syne',sans-serif;font-size:22px;font-weight:900;color:#0d1117;margin-bottom:8px; }
+    .cert-logo span { color:#2563eb; }
+    .cert-divider { width:80px;height:3px;background:linear-gradient(90deg,#2563eb,#6366f1);border-radius:2px;margin:20px auto; }
+    .cert-body { font-size:14px;color:#64748b;margin-bottom:16px; }
+    .cert-name { font-family:'Syne',sans-serif;font-size:42px;font-weight:900;color:#0d1117;margin:8px 0;line-height:1; }
+    .cert-course { font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#2563eb;margin:20px 0 8px; }
+    .cert-meta { color:#94a3b8;font-size:13px;margin-bottom:30px; }
+    .cert-footer { display:flex;justify-content:space-between;align-items:flex-end;margin-top:40px;padding-top:24px;border-top:1px solid #f1f5f9; }
+    .cert-sig { text-align:center; }
+    .cert-sig-line { width:120px;height:1px;background:#cbd5e1;margin:8px auto 4px; }
+    .cert-sig-label { font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8; }
+    .cert-seal { width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#6366f1);display:flex;align-items:center;justify-content:center;color:white;font-size:24px;font-weight:900;font-family:'Syne',sans-serif; }
+    @media print { body{background:white;padding:0;} .cert{box-shadow:none;border-radius:0;} }
+  </style>
+  </head><body>
+    <div class="cert">
+      <div class="cert-top">Certificate of Completion</div>
+      <div class="cert-logo">EduSmart <span>360</span></div>
+      <div class="cert-divider"></div>
+      <div class="cert-body">This is to certify that</div>
+      <div class="cert-name">${name}</div>
+      <div class="cert-body" style="margin-top:6px;">${dept} · PRN: ${prn}</div>
+      <div class="cert-body" style="margin-top:4px;">has successfully completed the course</div>
+      <div class="cert-course">${course.title}</div>
+      <div class="cert-meta">${course.subject} · Semester ${course.semester} · ${course.difficulty} Level · ${course.totalLessons} Lessons</div>
+      <div class="cert-footer">
+        <div class="cert-sig">
+          <div style="font-size:18px;font-family:'Syne',sans-serif;font-weight:800;color:#0d1117;margin-bottom:4px;">${course.createdByName||"Faculty"}</div>
+          <div class="cert-sig-line"></div>
+          <div class="cert-sig-label">Course Instructor</div>
+        </div>
+        <div class="cert-seal">ES</div>
+        <div class="cert-sig">
+          <div style="font-size:13px;font-weight:700;color:#0d1117;margin-bottom:4px;">${dateStr}</div>
+          <div class="cert-sig-line"></div>
+          <div class="cert-sig-label">Date of Completion</div>
+        </div>
+      </div>
+    </div>
+    <script>setTimeout(()=>window.print(),800);<\/script>
+  </body></html>`);
+  certWindow.document.close();
+};
+ 
+// ─── TAB SWITCHING ───
+window.lmsSwitchTab = function(tab, el) {
+  document.querySelectorAll(".lms-inner-tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".lms-tab-pane").forEach(p => p.style.display = "none");
+  document.getElementById("lmspane-" + tab).style.display = "block";
+  if (el) el.classList.add("active");
+  if (tab === "mycourses") lmsRenderMyCourses();
+  if (tab === "certificates") lmsRenderCertificates();
+  lucide.createIcons();
+};
+ 
+// ─── FILTER + VIEW ───
+window.lmsFilterCourses = function() { lmsRenderExplore(); };
+window.lmsSetDiffFilter = function(el, diff) {
+  lmsDiffFilter = diff;
+  document.querySelectorAll("#lmsDiffFilters .lms-filter-chip").forEach(c => c.classList.remove("active"));
+  el.classList.add("active");
+  lmsRenderExplore();
+};
+window.lmsSetView = function(mode) {
+  lmsViewMode = mode;
+  document.getElementById("lmsViewGrid").classList.toggle("active", mode === "grid");
+  document.getElementById("lmsViewList").classList.toggle("active", mode === "list");
+  lmsRenderExplore();
+};
+ 
+// ─── Hook into showSection to load LMS when navigating ───
+const _origShowSection = window.showSection;
+window.showSection = function(id, el) {
+  if (_origShowSection) _origShowSection(id, el);
+  if (id === "lms") {
+    lmsLoadAll();
+    lucide.createIcons();
+  }
+};
+ 
+lucide.createIcons();
+
 </script>
+ <!-- ================================================================
+     LMS COURSE PLAYER OVERLAY  (add before </body>)
+================================================================ -->
+<div id="lmsCoursePlayer" class="lms-player-overlay">
+  <div class="lms-player-topbar">
+    <button class="lms-player-back" onclick="lmsClosePlayer()">
+      <i data-lucide="arrow-left" size="16"></i>
+    </button>
+    <div class="lms-player-course-title" id="lmsPlayerCourseTitle">Course Title</div>
+    <div class="lms-player-progress-pill" id="lmsPlayerProgressPill">0 / 0 lessons</div>
+    <button class="lms-player-complete-btn" id="lmsMarkCompleteBtn" onclick="lmsMarkLessonComplete()">
+      <i data-lucide="check" size="14"></i> Mark Complete
+    </button>
+  </div>
+  <div class="lms-player-body">
+    <div class="lms-player-sidebar" id="lmsPlayerSidebar"></div>
+    <div class="lms-player-main" id="lmsPlayerMain"></div>
+  </div>
+</div>
  
 </body>
 </html>
