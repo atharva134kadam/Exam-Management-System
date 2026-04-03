@@ -419,43 +419,6 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
 </head>
 <body>
 
-<!-- ====== LOGIN SCREEN ====== -->
-<div id="loginScreen" class="login-wrap">
-  <div class="login-box">
-    <div class="login-logo">
-      <div class="logo-mark">ES</div>
-      <div class="logo-text">EduSmart <span>360</span></div>
-    </div>
-    <div class="login-title">Parent Portal</div>
-    <div class="login-sub">Sign in to monitor your child's academic journey.</div>
-    <input type="email" id="loginEmail" placeholder="Registered email address">
-    <input type="password" id="loginPassword" placeholder="Password">
-    <button class="login-btn" onclick="loginParent()">Sign In to Portal</button>
-    <div class="login-err" id="loginErr"></div>
-    <div class="register-link">New parent? <a onclick="showRegister()">Register here</a></div>
-  </div>
-</div>
-
-<!-- ====== REGISTER SCREEN ====== -->
-<div id="registerScreen" style="display:none;" class="login-wrap">
-  <div class="login-box">
-    <div class="login-logo">
-      <div class="logo-mark">ES</div>
-      <div class="logo-text">EduSmart <span>360</span></div>
-    </div>
-    <div class="login-title">Register as Parent</div>
-    <div class="login-sub">Link your account to your child's PRN number.</div>
-    <input type="text" id="regName" placeholder="Your full name">
-    <input type="text" id="regPRN" placeholder="Child's PRN Number">
-    <input type="email" id="regEmail" placeholder="Email address">
-    <input type="tel" id="regPhone" placeholder="Phone number">
-    <input type="password" id="regPassword" placeholder="Create a password">
-    <button class="login-btn" onclick="registerParent()">Create Account</button>
-    <div class="login-err" id="regErr"></div>
-    <div class="register-link">Already have an account? <a onclick="showLogin()">Sign in</a></div>
-  </div>
-</div>
-
 <!-- ====== SIDEBAR ====== -->
 <aside class="sidebar" id="sidebar" style="display:none;">
   <div class="sidebar-logo">
