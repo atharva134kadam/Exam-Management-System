@@ -901,65 +901,17 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 function showLoginScreen() {
-  document.getElementById("loginScreen").style.display = "flex";
-  document.getElementById("registerScreen").style.display = "none";
   document.getElementById("sidebar").style.display = "none";
   document.getElementById("mainWrap").style.display = "none";
 }
 
 function showDashboard() {
-  document.getElementById("loginScreen").style.display = "none";
-  document.getElementById("registerScreen").style.display = "none";
+
   document.getElementById("sidebar").style.display = "flex";
   document.getElementById("mainWrap").style.display = "flex";
   updateUI();
   lucide.createIcons();
 }
-
-window.showRegister = function() {
-  document.getElementById("loginScreen").style.display = "none";
-  document.getElementById("registerScreen").style.display = "flex";
-};
-window.showLogin = function() {
-  document.getElementById("registerScreen").style.display = "none";
-  document.getElementById("loginScreen").style.display = "flex";
-};
-
-window.loginParent = async function() {
-  const email = document.getElementById("loginEmail").value.trim();
-  const pass = document.getElementById("loginPassword").value;
-  const errEl = document.getElementById("loginErr");
-  if (!email || !pass) return errEl.innerText = "Please enter email and password.";
-  try {
-    await signInWithEmailAndPassword(auth, email, pass);
-  } catch(err) {
-    errEl.innerText = err.code === "auth/user-not-found" ? "No account found with this email." :
-      err.code === "auth/wrong-password" ? "Incorrect password." : "Login failed. Please try again.";
-  }
-};
-
-window.registerParent = async function() {
-  const name = document.getElementById("regName").value.trim();
-  const prn = document.getElementById("regPRN").value.trim();
-  const email = document.getElementById("regEmail").value.trim();
-  const phone = document.getElementById("regPhone").value.trim();
-  const pass = document.getElementById("regPassword").value;
-  const errEl = document.getElementById("regErr");
-  if (!name || !prn || !email || !pass) return errEl.innerText = "Please fill all required fields.";
-  // Verify PRN exists
-  const childQ = query(collection(db, "users"), where("prn", "==", prn), where("role", "==", "student"));
-  const childSnap = await getDocs(childQ);
-  if (childSnap.empty) return errEl.innerText = "No student found with PRN: " + prn;
-  try {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    await setDoc(doc(db, "parents", cred.user.uid), {
-      name, linkedPRN: prn, email, phone, role: "parent",
-      createdAt: serverTimestamp()
-    });
-  } catch(err) {
-    errEl.innerText = err.code === "auth/email-already-in-use" ? "This email is already registered." : "Registration failed.";
-  }
-};
 
 window.logoutParent = () => signOut(auth).then(() => showLoginScreen());
 
