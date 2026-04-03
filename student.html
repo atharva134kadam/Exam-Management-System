@@ -2206,7 +2206,160 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
         </div>
       </div>
     </div><!-- /leaves -->
+
+    <!-- ========== LMS SECTION ========== -->
+<div id="lms" class="section-content" style="display:none;">
  
+  <!-- Hero -->
+  <div class="lms-hero">
+    <div class="lms-hero-inner">
+      <div>
+        <div class="lms-hero-label">
+          <i data-lucide="graduation-cap" size="12"></i> Learning Management System
+        </div>
+        <h1 class="lms-hero-title">Your Learning<br>Dashboard</h1>
+        <p class="lms-hero-sub">Continue where you left off. Track your progress and earn certificates.</p>
+      </div>
+      <div class="lms-hero-stats">
+        <div class="lms-hero-stat">
+          <div class="lms-hero-stat-val" id="lmsStatEnrolled">—</div>
+          <div class="lms-hero-stat-lbl">Enrolled</div>
+        </div>
+        <div class="lms-hero-stat">
+          <div class="lms-hero-stat-val" id="lmsStatCompleted">—</div>
+          <div class="lms-hero-stat-lbl">Completed</div>
+        </div>
+        <div class="lms-hero-stat">
+          <div class="lms-hero-stat-val" id="lmsStatHours">—</div>
+          <div class="lms-hero-stat-lbl">Hours Est.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+ 
+  <!-- Inner Tabs -->
+  <div class="lms-inner-tabs">
+    <button class="lms-inner-tab active" id="lmstab-explore" onclick="lmsSwitchTab('explore',this)">
+      <i data-lucide="compass" size="14"></i> Explore Courses
+    </button>
+    <button class="lms-inner-tab" id="lmstab-mycourses" onclick="lmsSwitchTab('mycourses',this)">
+      <i data-lucide="book-open" size="14"></i> My Courses
+    </button>
+    <button class="lms-inner-tab" id="lmstab-certificates" onclick="lmsSwitchTab('certificates',this)">
+      <i data-lucide="award" size="14"></i> Certificates
+    </button>
+  </div>
+ 
+  <!-- ══ TAB: EXPLORE ══ -->
+  <div id="lmspane-explore" class="lms-tab-pane">
+ 
+    <!-- Mini stats -->
+    <div class="lms-stats-mini">
+      <div class="lms-mini-stat blue">
+        <div class="lms-mini-stat-val" id="lmsExpTotal">—</div>
+        <div class="lms-mini-stat-lbl">Available Courses</div>
+      </div>
+      <div class="lms-mini-stat green">
+        <div class="lms-mini-stat-val" id="lmsExpPublished">—</div>
+        <div class="lms-mini-stat-lbl">Published</div>
+      </div>
+      <div class="lms-mini-stat purple">
+        <div class="lms-mini-stat-val" id="lmsExpSubjects">—</div>
+        <div class="lms-mini-stat-lbl">Subjects</div>
+      </div>
+      <div class="lms-mini-stat orange">
+        <div class="lms-mini-stat-val" id="lmsExpLessons">—</div>
+        <div class="lms-mini-stat-lbl">Total Lessons</div>
+      </div>
+    </div>
+ 
+    <!-- Toolbar -->
+    <div class="lms-toolbar">
+      <div class="lms-search-wrap">
+        <i data-lucide="search" size="15"></i>
+        <input class="lms-search-input" id="lmsSearchInput" placeholder="Search courses, topics..." oninput="lmsFilterCourses()">
+      </div>
+      <div id="lmsDiffFilters" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="lms-filter-chip active" data-diff="" onclick="lmsSetDiffFilter(this,'')">All</button>
+        <button class="lms-filter-chip" data-diff="Beginner" onclick="lmsSetDiffFilter(this,'Beginner')">Beginner</button>
+        <button class="lms-filter-chip" data-diff="Intermediate" onclick="lmsSetDiffFilter(this,'Intermediate')">Intermediate</button>
+        <button class="lms-filter-chip" data-diff="Advanced" onclick="lmsSetDiffFilter(this,'Advanced')">Advanced</button>
+      </div>
+      <div class="lms-view-toggle">
+        <button class="lms-view-btn active" id="lmsViewGrid" onclick="lmsSetView('grid')" title="Grid">
+          <i data-lucide="grid-2x2" size="16"></i>
+        </button>
+        <button class="lms-view-btn" id="lmsViewList" onclick="lmsSetView('list')" title="List">
+          <i data-lucide="list" size="16"></i>
+        </button>
+      </div>
+    </div>
+ 
+    <!-- Course grid -->
+    <div class="lms-course-grid" id="lmsCourseGrid">
+      <div class="lms-loader" style="grid-column:1/-1;">
+        <div class="lms-loader-ring"></div>
+        <p style="color:#64748b;font-size:13px;">Loading courses...</p>
+      </div>
+    </div>
+ 
+  </div><!-- /explore -->
+ 
+  <!-- ══ TAB: MY COURSES ══ -->
+  <div id="lmspane-mycourses" class="lms-tab-pane" style="display:none;">
+ 
+    <!-- Continue Learning -->
+    <div class="lms-continue-section" id="lmsContinueSection" style="display:none;">
+      <div class="lms-section-head">
+        <div class="lms-section-title"><i data-lucide="play-circle" size="18"></i> Continue Learning <span id="lmsContinueCount">0</span></div>
+      </div>
+      <div class="lms-scroll-row" id="lmsContinueRow"></div>
+    </div>
+ 
+    <!-- All enrolled -->
+    <div class="lms-section-head" style="margin-top:8px;">
+      <div class="lms-section-title"><i data-lucide="layers" size="18"></i> All Enrolled Courses</div>
+    </div>
+    <div id="lmsMyCoursesContainer">
+      <div class="lms-loader"><div class="lms-loader-ring"></div><p style="color:#64748b;font-size:13px;">Loading...</p></div>
+    </div>
+ 
+  </div><!-- /mycourses -->
+ 
+  <!-- ══ TAB: CERTIFICATES ══ -->
+  <div id="lmspane-certificates" class="lms-tab-pane" style="display:none;">
+    <div class="lms-section-head" style="margin-bottom:20px;">
+      <div class="lms-section-title"><i data-lucide="award" size="18"></i> Earned Certificates</div>
+    </div>
+    <div id="lmsCertContainer">
+      <div class="lms-loader"><div class="lms-loader-ring"></div><p style="color:#64748b;font-size:13px;">Loading certificates...</p></div>
+    </div>
+  </div>
+ 
+</div><!-- /lms section -->
+ 
+ 
+<!-- ================================================================
+     LMS COURSE PLAYER OVERLAY  (add before </body>)
+================================================================ -->
+<div id="lmsCoursePlayer" class="lms-player-overlay">
+  <div class="lms-player-topbar">
+    <button class="lms-player-back" onclick="lmsClosePlayer()">
+      <i data-lucide="arrow-left" size="16"></i>
+    </button>
+    <div class="lms-player-course-title" id="lmsPlayerCourseTitle">Course Title</div>
+    <div class="lms-player-progress-pill" id="lmsPlayerProgressPill">0 / 0 lessons</div>
+    <button class="lms-player-complete-btn" id="lmsMarkCompleteBtn" onclick="lmsMarkLessonComplete()">
+      <i data-lucide="check" size="14"></i> Mark Complete
+    </button>
+  </div>
+  <div class="lms-player-body">
+    <div class="lms-player-sidebar" id="lmsPlayerSidebar"></div>
+    <div class="lms-player-main" id="lmsPlayerMain"></div>
+  </div>
+</div>
+ 
+
     <!-- ========== GRIEVANCE SECTION ========== -->
     <div id="grievance" class="section-content">
       <div class="card">
