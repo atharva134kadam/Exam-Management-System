@@ -2208,7 +2208,7 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
     </div><!-- /leaves -->
 
     <!-- ========== LMS SECTION ========== -->
-<div id="lms" class="section-content" style="display:none;">
+<div id="lms" class="section-content">
  
   <!-- Hero -->
   <div class="lms-hero">
@@ -2386,12 +2386,12 @@ select:focus, textarea:focus, input:focus { outline: none; border-color: var(--a
 <!-- ====== FIREBASE + MAIN SCRIPTS ====== -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, query,
-  where, setDoc, serverTimestamp, updateDoc
+  where, setDoc, addDoc, updateDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
- 
+
 const firebaseConfig = {
   apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
   authDomain: "admin-management-db779.firebaseapp.com",
@@ -2401,40 +2401,40 @@ const firebaseConfig = {
   appId: "1:144412069580:web:52670196ee40c687ddbc69",
   measurementId: "G-HY31FECMSB"
 };
- 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
- 
-let studentData = null;
-let cheatWarnings = 0;
-const MAX_WARNINGS = 3;
-let examTimerInterval = null;
-let remainingSeconds = 0;
-let portfolioSkills = [];
 
-// ====== Timetable state ======
-let timetableData = null;
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+let studentData       = null;
+let cheatWarnings     = 0;
+const MAX_WARNINGS    = 3;
+let examTimerInterval = null;
+let remainingSeconds  = 0;
+let portfolioSkills   = [];
+
+// ── Timetable state ──
+let timetableData  = null;
 let ttClockInterval = null;
 
-// ─── LMS State ───
-let lmsAllCourses    = [];    // all published courses for dept
-let lmsEnrolledIds   = [];    // course IDs user enrolled in
-let lmsProgressMap   = {};    // { courseId: { completedLessons: Set<"wi_li"> } }
-let lmsCurrentCourse = null;  // course object being played
-let lmsCurrentLesson = null;  // { wi, li }
-let lmsCurrentUser   = null;
-let lmsStudentData   = null;
+// ── LMS State ──
+let lmsAllCourses    = [];
+let lmsEnrolledIds   = [];
+let lmsProgressMap   = {};
+let lmsCurrentCourse = null;
+let lmsCurrentLesson = null;
 let lmsDiffFilter    = "";
 let lmsViewMode      = "grid";
 
-// ====== Leave Management State ======
-let selectedLeaveType = "Medical";
-let allLeaveApplications = [];
-let calendarYear = new Date().getFullYear();
+// ── Leave Management State ──
+let selectedLeaveType      = "Medical";
+let allLeaveApplications   = [];
+let calendarYear  = new Date().getFullYear();
 let calendarMonth = new Date().getMonth();
- 
-// ====== AUTH ======
+
+// ================================================================
+// AUTH
+// ================================================================
 onAuthStateChanged(auth, async (user) => {
   if (!user) return window.location.href = "index.html";
   try {
@@ -2447,58 +2447,68 @@ onAuthStateChanged(auth, async (user) => {
     startLiveClock();
     await loadDashboardData();
     await loadPortfolioData();
+    // ── Boot LMS after auth ──
+    await lmsLoadProgress();
+    await lmsLoadCourses();
+    lmsUpdateHeroStats();
   } catch (err) {
     console.error("Auth error:", err);
   }
   lucide.createIcons();
 });
 
-// ====== LIVE CLOCK ======
+// ================================================================
+// LIVE CLOCK
+// ================================================================
 function startLiveClock() {
-  const updateClock = () => {
+  const tick = () => {
     const now = new Date();
-    const h = now.getHours();
-    const m = now.getMinutes().toString().padStart(2, '0');
-    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h   = now.getHours();
+    const m   = now.getMinutes().toString().padStart(2, "0");
+    const ap  = h >= 12 ? "PM" : "AM";
     const h12 = h % 12 || 12;
-    const el = document.getElementById("liveClock");
-    if (el) el.innerHTML = `<i data-lucide="clock" size="14"></i> ${h12}:${m} ${ampm}`;
+    const el  = document.getElementById("liveClock");
+    if (el) el.innerHTML = `<i data-lucide="clock" size="14"></i> ${h12}:${m} ${ap}`;
     lucide.createIcons();
   };
-  updateClock();
-  ttClockInterval = setInterval(updateClock, 30000);
+  tick();
+  ttClockInterval = setInterval(tick, 30000);
 }
- 
-// ====== UPDATE UI ======
+
+// ================================================================
+// UPDATE UI
+// ================================================================
 function updateUI() {
-  const initials = studentData.name.trim().split(' ').map(n => n[0]).join('').toUpperCase();
-  document.getElementById("u-initials").innerText = initials;
-  document.getElementById("u-name").innerText = studentData.name.trim();
-  document.getElementById("u-dept-sub").innerText = `${studentData.department} · Batch ${studentData.batch}`;
-  document.getElementById("p-avatar-lg").innerText = initials;
-  document.getElementById("p-name").innerText = studentData.name.trim();
-  document.getElementById("p-dept").innerText = studentData.department;
-  document.getElementById("p-prn").innerText = `PRN: ${studentData.prn}`;
-  document.getElementById("topbarSub").innerText = `${studentData.department} · Batch ${studentData.batch}`;
-  document.getElementById("info-name-v").innerText = studentData.name.trim();
-  document.getElementById("info-prn").innerText = studentData.prn;
-  document.getElementById("info-dept").innerText = studentData.department;
-  document.getElementById("info-batch").innerText = studentData.batch;
-  document.getElementById("info-email").innerText = studentData.email;
-  document.getElementById("info-phone").innerText = studentData.phone || "N/A";
-  document.getElementById("reevalName").value = studentData.name.trim();
+  const initials = studentData.name.trim().split(" ").map(n => n[0]).join("").toUpperCase();
+  document.getElementById("u-initials").innerText    = initials;
+  document.getElementById("u-name").innerText        = studentData.name.trim();
+  document.getElementById("u-dept-sub").innerText    = `${studentData.department} · Batch ${studentData.batch}`;
+  document.getElementById("p-avatar-lg").innerText   = initials;
+  document.getElementById("p-name").innerText        = studentData.name.trim();
+  document.getElementById("p-dept").innerText        = studentData.department;
+  document.getElementById("p-prn").innerText         = `PRN: ${studentData.prn}`;
+  document.getElementById("topbarSub").innerText     = `${studentData.department} · Batch ${studentData.batch}`;
+  document.getElementById("info-name-v").innerText   = studentData.name.trim();
+  document.getElementById("info-prn").innerText      = studentData.prn;
+  document.getElementById("info-dept").innerText     = studentData.department;
+  document.getElementById("info-batch").innerText    = studentData.batch;
+  document.getElementById("info-email").innerText    = studentData.email;
+  document.getElementById("info-phone").innerText    = studentData.phone || "N/A";
+  document.getElementById("reevalName").value        = studentData.name.trim();
   const emailEl = document.getElementById("pf-email");
   if (emailEl && !emailEl.value) emailEl.value = studentData.email || "";
   const phoneEl = document.getElementById("pf-phone");
   if (phoneEl && !phoneEl.value) phoneEl.value = studentData.phone || "";
 }
- 
-// ====== LOAD ALL DATA ======
+
+// ================================================================
+// LOAD ALL DATA
+// ================================================================
 async function loadDashboardData() {
   try {
     const respQuery = query(collection(db, "responses"), where("studentId", "==", auth.currentUser.uid));
-    const respSnap = await getDocs(respQuery);
-    const takenIds = respSnap.docs.map(d => d.data().examId);
+    const respSnap  = await getDocs(respQuery);
+    const takenIds  = respSnap.docs.map(d => d.data().examId);
     await Promise.all([
       loadExams(takenIds),
       loadPublishedResults(),
@@ -2517,85 +2527,80 @@ async function loadDashboardData() {
 }
 
 // ================================================================
-// ========== TIMETABLE FUNCTIONS =================================
+// NAVIGATION
 // ================================================================
+window.showSection = function (id, el = null) {
+  document.querySelectorAll(".section-content").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  document.querySelectorAll(".nav-item").forEach(t => t.classList.remove("active"));
+  if (el) el.classList.add("active");
+  const titles = {
+    profile: "My Profile", timetable: "Timetable", exams: "Examinations",
+    assignments: "Assignments", results: "Results", attendance: "Attendance",
+    portfolio: "Portfolio", leaves: "Leave Management", grievance: "Help Desk",
+    reevaluation: "Re-Evaluation", lms: "My Courses"
+  };
+  document.getElementById("topbarTitle").innerText = titles[id] || id;
+  if (id === "timetable") renderTimetableToday();
+  if (id === "lms") {
+    lmsLoadProgress().then(() => lmsLoadCourses()).then(() => lmsUpdateHeroStats());
+  }
+  lucide.createIcons();
+};
 
+// ================================================================
+// TIMETABLE
+// ================================================================
 async function loadTimetable() {
   if (!studentData) return;
   try {
-    // Query timetables matching this student's department
-    const q = query(
-      collection(db, "timetables"),
+    let q = query(collection(db, "timetables"),
       where("department", "==", studentData.department),
-      where("semester", "==", String(studentData.semester || "4"))
-    );
-    const snap = await getDocs(q);
-
+      where("semester", "==", String(studentData.semester || "4")));
+    let snap = await getDocs(q);
     if (snap.empty) {
-      // Try without semester filter as fallback
       const q2 = query(collection(db, "timetables"), where("department", "==", studentData.department));
       const snap2 = await getDocs(q2);
-      if (!snap2.empty) {
-        timetableData = snap2.docs[0].data();
-      }
+      if (!snap2.empty) timetableData = snap2.docs[0].data();
     } else {
       timetableData = snap.docs[0].data();
     }
-
     renderTimetableToday();
     renderTimetableWeek();
   } catch (err) {
     console.error("Timetable load error:", err);
-    const todaySlots = document.getElementById("ttTodaySlots");
-    if (todaySlots) todaySlots.innerHTML = `<div class="empty-state"><p>Could not load timetable. Please try again.</p></div>`;
+    const el = document.getElementById("ttTodaySlots");
+    if (el) el.innerHTML = `<div class="empty-state"><p>Could not load timetable.</p></div>`;
   }
 }
 
-// Get today's day name
 function getTodayDayName() {
-  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  return days[new Date().getDay()];
+  return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()];
 }
-
-// Parse hour from slot key like "Monday_9:00" -> 9
-function parseSlotHour(slotKey) {
-  const parts = slotKey.split("_");
-  if (parts.length < 2) return -1;
-  const timePart = parts[1]; // "9:00" or "10:00"
-  return parseInt(timePart.split(":")[0]);
+function parseSlotHour(key) {
+  const p = key.split("_");
+  return p.length < 2 ? -1 : parseInt(p[1].split(":")[0]);
 }
-
-// Get current hour (24h)
-function getCurrentHour() {
-  return new Date().getHours();
-}
-
-// Get type chip HTML
-function typeChipHTML(type, color) {
-  const configs = {
-    "Theory":   { bg: "rgba(37,99,235,0.1)",  color: "#1d4ed8" },
-    "Tutorial": { bg: "rgba(219,39,119,0.1)", color: "#be185d" },
-    "Lab":      { bg: "rgba(5,150,105,0.1)",  color: "#047857" },
-  };
-  const cfg = configs[type] || { bg: "rgba(100,116,139,0.1)", color: "#475569" };
+function typeChipHTML(type) {
+  const cfg = {
+    Theory:   { bg: "rgba(37,99,235,0.1)",  color: "#1d4ed8" },
+    Tutorial: { bg: "rgba(219,39,119,0.1)", color: "#be185d" },
+    Lab:      { bg: "rgba(5,150,105,0.1)",  color: "#047857" }
+  }[type] || { bg: "rgba(100,116,139,0.1)", color: "#475569" };
   return `<span class="tt-type-chip" style="background:${cfg.bg};color:${cfg.color};">${type}</span>`;
 }
 
-// Render today's timetable
 function renderTimetableToday() {
-  const heroEl    = document.getElementById("ttTodayHero");
-  const nextEl    = document.getElementById("ttNextCard");
-  const slotsEl   = document.getElementById("ttTodaySlots");
+  const heroEl  = document.getElementById("ttTodayHero");
+  const nextEl  = document.getElementById("ttNextCard");
+  const slotsEl = document.getElementById("ttTodaySlots");
   if (!heroEl || !slotsEl) return;
 
   const today = getTodayDayName();
   const now   = new Date();
-  const currentHour = now.getHours();
-
-  // Format date nicely
+  const cur   = now.getHours();
   const dateStr = now.toLocaleDateString("en-IN", { weekday:"long", day:"2-digit", month:"long", year:"numeric" });
 
-  // Hero
   heroEl.innerHTML = `
     <div class="tt-today-hero">
       <div class="tt-today-label">Today's Schedule</div>
@@ -2606,216 +2611,120 @@ function renderTimetableToday() {
       <div class="tt-today-date">${dateStr}</div>
     </div>`;
 
-  if (!timetableData || !timetableData.slots) {
-    slotsEl.innerHTML = `<div class="empty-state"><i data-lucide="calendar-x" size="40"></i><p>No timetable found for your department.</p></div>`;
-    lucide.createIcons();
-    return;
+  if (!timetableData?.slots) {
+    slotsEl.innerHTML = `<div class="empty-state"><i data-lucide="calendar-x" size="40"></i><p>No timetable found.</p></div>`;
+    lucide.createIcons(); return;
   }
 
-  // Collect today's slots
-  const slots = timetableData.slots;
-  const todaySlots = Object.entries(slots)
-    .filter(([key]) => key.startsWith(today + "_"))
-    .map(([key, val]) => ({ key, hour: parseSlotHour(key), ...val }))
+  const todaySlots = Object.entries(timetableData.slots)
+    .filter(([k]) => k.startsWith(today + "_"))
+    .map(([k, v]) => ({ key: k, hour: parseSlotHour(k), ...v }))
     .sort((a, b) => a.hour - b.hour);
 
-  if (todaySlots.length === 0) {
+  if (!todaySlots.length) {
     nextEl.innerHTML = "";
-    slotsEl.innerHTML = `
-      <div class="tt-no-class">
-        <div style="font-size:48px;margin-bottom:12px;">🎉</div>
-        <div style="font-weight:800;font-size:16px;color:var(--primary);margin-bottom:6px;">No classes today!</div>
-        <div style="font-size:13px;color:var(--muted);">Enjoy your free day. Check the Weekly tab for upcoming lectures.</div>
-      </div>`;
-    lucide.createIcons();
-    return;
+    slotsEl.innerHTML = `<div class="tt-no-class"><div style="font-size:48px;margin-bottom:12px;">🎉</div><div style="font-weight:800;font-size:16px;color:var(--primary);margin-bottom:6px;">No classes today!</div><div style="font-size:13px;color:var(--muted);">Enjoy your free day.</div></div>`;
+    lucide.createIcons(); return;
   }
 
-  // Find current and next slot
-  // College hours: slot at hour X runs from X:00 to (X+1):00 (1 hr). Lab slots are 2h but adjacent.
-  let currentSlot = null;
-  let nextSlot = null;
-
-  for (const slot of todaySlots) {
-    if (slot.hour === currentHour) { currentSlot = slot; }
-    else if (slot.hour > currentHour && !nextSlot) { nextSlot = slot; }
+  let curSlot = null, nxtSlot = null;
+  for (const s of todaySlots) {
+    if (s.hour === cur) curSlot = s;
+    else if (s.hour > cur && !nxtSlot) nxtSlot = s;
   }
 
-  // Next card
-  if (nextSlot) {
-    const minsTill = (nextSlot.hour - currentHour) * 60 - now.getMinutes();
-    const displayTime = nextSlot.hour > 12
-      ? `${nextSlot.hour - 12}:00 PM`
-      : (nextSlot.hour === 12 ? "12:00 PM" : `${nextSlot.hour}:00 AM`);
-    const countdownText = minsTill < 60
-      ? `in ${minsTill} min`
-      : `in ${Math.floor(minsTill/60)}h ${minsTill%60}m`;
-    nextEl.innerHTML = `
-      <div class="tt-next-card">
-        <div class="tt-next-icon"><i data-lucide="bell" size="22"></i></div>
-        <div class="tt-next-info">
-          <div class="tt-next-label">Up Next — ${countdownText}</div>
-          <div class="tt-next-subject">${nextSlot.subjectName} ${typeChipHTML(nextSlot.type, nextSlot.color)}</div>
-          <div class="tt-next-meta"><i data-lucide="user" size="12" style="display:inline;margin-right:4px;"></i>${nextSlot.facultyName}</div>
-        </div>
-        <div class="tt-next-time">
-          <div class="tt-next-time-val">${displayTime}</div>
-          <div class="tt-next-time-sub">Starts</div>
-        </div>
-      </div>`;
-  } else if (currentSlot) {
-    nextEl.innerHTML = `
-      <div class="tt-next-card" style="background:var(--green);">
-        <div class="tt-next-icon"><i data-lucide="radio" size="22"></i></div>
-        <div class="tt-next-info">
-          <div class="tt-next-label">Now In Progress</div>
-          <div class="tt-next-subject">${currentSlot.subjectName} ${typeChipHTML(currentSlot.type, currentSlot.color)}</div>
-          <div class="tt-next-meta"><i data-lucide="user" size="12" style="display:inline;margin-right:4px;"></i>${currentSlot.facultyName}</div>
-        </div>
-        <div class="tt-next-time" style="background:rgba(255,255,255,0.2);">
-          <div class="tt-next-time-val" style="font-size:14px;">Live Now</div>
-          <div class="tt-next-time-sub">Ongoing</div>
-        </div>
-      </div>`;
+  if (nxtSlot) {
+    const mins = (nxtSlot.hour - cur) * 60 - now.getMinutes();
+    const dH   = nxtSlot.hour > 12 ? nxtSlot.hour - 12 : (nxtSlot.hour === 12 ? 12 : nxtSlot.hour);
+    const ap   = nxtSlot.hour >= 12 ? "PM" : "AM";
+    const cd   = mins < 60 ? `in ${mins} min` : `in ${Math.floor(mins/60)}h ${mins%60}m`;
+    nextEl.innerHTML = `<div class="tt-next-card"><div class="tt-next-icon"><i data-lucide="bell" size="22"></i></div><div class="tt-next-info"><div class="tt-next-label">Up Next — ${cd}</div><div class="tt-next-subject">${nxtSlot.subjectName} ${typeChipHTML(nxtSlot.type)}</div><div class="tt-next-meta"><i data-lucide="user" size="12" style="display:inline;margin-right:4px;"></i>${nxtSlot.facultyName}</div></div><div class="tt-next-time"><div class="tt-next-time-val">${dH}:00 ${ap}</div><div class="tt-next-time-sub">Starts</div></div></div>`;
+  } else if (curSlot) {
+    nextEl.innerHTML = `<div class="tt-next-card" style="background:var(--green);"><div class="tt-next-icon"><i data-lucide="radio" size="22"></i></div><div class="tt-next-info"><div class="tt-next-label">Now In Progress</div><div class="tt-next-subject">${curSlot.subjectName} ${typeChipHTML(curSlot.type)}</div><div class="tt-next-meta"><i data-lucide="user" size="12" style="display:inline;margin-right:4px;"></i>${curSlot.facultyName}</div></div><div class="tt-next-time" style="background:rgba(255,255,255,0.2);"><div class="tt-next-time-val" style="font-size:14px;">Live Now</div><div class="tt-next-time-sub">Ongoing</div></div></div>`;
   } else {
-    // All classes done for today
-    const lastSlot = todaySlots[todaySlots.length - 1];
-    nextEl.innerHTML = `
-      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:16px;padding:18px 22px;display:flex;align-items:center;gap:14px;margin-bottom:20px;">
-        <div style="font-size:28px;">✅</div>
-        <div>
-          <div style="font-weight:800;color:#166534;font-size:14px;">All Done for Today!</div>
-          <div style="font-size:13px;color:#15803d;margin-top:3px;">Last lecture was ${lastSlot.subjectName} at ${lastSlot.hour > 12 ? lastSlot.hour-12 : lastSlot.hour}:00 ${lastSlot.hour >= 12 ? 'PM' : 'AM'}</div>
-        </div>
-      </div>`;
+    const last = todaySlots[todaySlots.length - 1];
+    nextEl.innerHTML = `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:16px;padding:18px 22px;display:flex;align-items:center;gap:14px;margin-bottom:20px;"><div style="font-size:28px;">✅</div><div><div style="font-weight:800;color:#166534;font-size:14px;">All Done for Today!</div><div style="font-size:13px;color:#15803d;margin-top:3px;">Last lecture: ${last.subjectName}</div></div></div>`;
   }
 
-  // Render slot rows with timeline
   let html = "";
   todaySlots.forEach((slot, idx) => {
-    const isPast = slot.hour < currentHour;
-    const isActive = slot.hour === currentHour;
-    const isFuture = slot.hour > currentHour;
-    const displayHour = slot.hour > 12 ? slot.hour - 12 : (slot.hour === 0 ? 12 : slot.hour);
-    const ampm = slot.hour >= 12 ? "PM" : "AM";
-    const timeStr = `${displayHour}:00`;
-    const dotClass = isActive ? "active-dot" : (isPast ? "past-dot" : "");
-    const cardClass = isActive ? "tt-active-slot" : (isPast ? "tt-past-slot" : "");
-    const isLast = idx === todaySlots.length - 1;
-
+    const isPast   = slot.hour < cur;
+    const isActive = slot.hour === cur;
+    const dH       = slot.hour > 12 ? slot.hour - 12 : (slot.hour === 0 ? 12 : slot.hour);
+    const ap       = slot.hour >= 12 ? "PM" : "AM";
+    const isLast   = idx === todaySlots.length - 1;
+    const dotCls   = isActive ? "active-dot" : (isPast ? "past-dot" : "");
+    const cardCls  = isActive ? "tt-active-slot" : (isPast ? "tt-past-slot" : "");
     html += `
       <div class="tt-slot-row">
         <div class="tt-slot-time-col">
-          <div class="tt-slot-time-label">${timeStr}<br><span style="font-size:10px;">${ampm}</span></div>
-          <div class="tt-slot-dot ${dotClass}"></div>
+          <div class="tt-slot-time-label">${dH}:00<br><span style="font-size:10px;">${ap}</span></div>
+          <div class="tt-slot-dot ${dotCls}"></div>
           ${!isLast ? `<div class="tt-slot-line"></div>` : ""}
         </div>
-        <div class="tt-slot-card ${cardClass}" style="margin-bottom:${isLast?'0':''};">
-          <div class="tt-slot-color-bar" style="background:${slot.color || '#2563eb'};"></div>
+        <div class="tt-slot-card ${cardCls}">
+          <div class="tt-slot-color-bar" style="background:${slot.color || "#2563eb"};"></div>
           <div style="padding-left:8px;">
             <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
               <div class="tt-slot-subject">${slot.subjectName}</div>
-              ${typeChipHTML(slot.type, slot.color)}
+              ${typeChipHTML(slot.type)}
               ${isActive ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#166534;font-size:10px;font-weight:800;padding:3px 9px;border-radius:100px;"><span class="tt-live-dot" style="width:5px;height:5px;"></span>Now</span>` : ""}
-              ${isPast ? `<span style="background:#f1f5f9;color:#94a3b8;font-size:10px;font-weight:700;padding:3px 9px;border-radius:100px;">Done</span>` : ""}
+              ${isPast  ? `<span style="background:#f1f5f9;color:#94a3b8;font-size:10px;font-weight:700;padding:3px 9px;border-radius:100px;">Done</span>` : ""}
             </div>
-            <div class="tt-slot-faculty">
-              <i data-lucide="user" size="12"></i> ${slot.facultyName}
-            </div>
+            <div class="tt-slot-faculty"><i data-lucide="user" size="12"></i> ${slot.facultyName}</div>
           </div>
         </div>
       </div>`;
   });
-
   slotsEl.innerHTML = html;
   lucide.createIcons();
 }
 
-// Render weekly timetable grid
 function renderTimetableWeek() {
   const container = document.getElementById("ttWeekGrid");
   if (!container) return;
-
-  if (!timetableData || !timetableData.slots) {
+  if (!timetableData?.slots) {
     container.innerHTML = `<div class="empty-state"><i data-lucide="calendar-x" size="40"></i><p>No timetable data available.</p></div>`;
-    lucide.createIcons();
-    return;
+    lucide.createIcons(); return;
   }
-
   const workDays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  const today = getTodayDayName();
-  const slots = timetableData.slots;
-
-  // Collect all unique hours
+  const today    = getTodayDayName();
+  const slots    = timetableData.slots;
   const allHours = new Set();
-  Object.keys(slots).forEach(key => {
-    const h = parseSlotHour(key);
-    if (h >= 0) allHours.add(h);
-  });
+  Object.keys(slots).forEach(k => { const h = parseSlotHour(k); if (h >= 0) allHours.add(h); });
   const sortedHours = [...allHours].sort((a, b) => a - b);
 
-  // Build table
   let thead = `<thead><tr><th>Time</th>`;
-  workDays.forEach(day => {
-    const isToday = day === today;
-    thead += `<th class="${isToday ? 'today-col' : ''}">${day.substring(0,3).toUpperCase()}${isToday ? ' 📍' : ''}</th>`;
-  });
+  workDays.forEach(d => { const isToday = d === today; thead += `<th class="${isToday ? "today-col" : ""}">${d.substring(0,3).toUpperCase()}${isToday ? " 📍" : ""}</th>`; });
   thead += `</tr></thead>`;
 
   let tbody = `<tbody>`;
-  sortedHours.forEach(hour => {
-    const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
-    const ampm = hour >= 12 ? "PM" : "AM";
-    const timeLabel = `${displayHour}:00 ${ampm}`;
-
-    tbody += `<tr><td>${timeLabel}</td>`;
-    workDays.forEach(day => {
-      const key = `${day}_${hour}:00`;
-      const slot = slots[key];
+  sortedHours.forEach(h => {
+    const dH = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+    const ap = h >= 12 ? "PM" : "AM";
+    tbody += `<tr><td>${dH}:00 ${ap}</td>`;
+    workDays.forEach(d => {
+      const slot = slots[`${d}_${h}:00`];
       if (slot) {
-        const lightColor = slot.color + "18"; // very faint bg
-        tbody += `<td>
-          <div class="tt-week-cell" style="background:${lightColor};border-left-color:${slot.color};">
-            <div class="tt-week-cell-subject">${slot.subjectName}</div>
-            <div class="tt-week-cell-faculty">${slot.facultyName}</div>
-            <div class="tt-week-cell-type" style="color:${slot.color};">${slot.type}</div>
-          </div>
-        </td>`;
-      } else {
-        tbody += `<td></td>`;
-      }
+        tbody += `<td><div class="tt-week-cell" style="background:${slot.color}18;border-left-color:${slot.color};"><div class="tt-week-cell-subject">${slot.subjectName}</div><div class="tt-week-cell-faculty">${slot.facultyName}</div><div class="tt-week-cell-type" style="color:${slot.color};">${slot.type}</div></div></td>`;
+      } else { tbody += `<td></td>`; }
     });
     tbody += `</tr>`;
   });
   tbody += `</tbody>`;
 
   container.innerHTML = `
-    <div style="margin-bottom:16px;">
-      <div style="font-weight:800;font-size:16px;color:var(--primary);">${timetableData.name || 'Class Timetable'}</div>
-      <div style="font-size:13px;color:var(--muted);margin-top:3px;">${timetableData.department} · Semester ${timetableData.semester}</div>
-    </div>
-    <div class="tt-week-grid">
-      <table class="tt-week-table">
-        ${thead}
-        ${tbody}
-      </table>
-    </div>
+    <div style="margin-bottom:16px;"><div style="font-weight:800;font-size:16px;color:var(--primary);">${timetableData.name || "Class Timetable"}</div><div style="font-size:13px;color:var(--muted);margin-top:3px;">${timetableData.department} · Semester ${timetableData.semester}</div></div>
+    <div class="tt-week-grid"><table class="tt-week-table">${thead}${tbody}</table></div>
     <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">
-      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);">
-        <div style="width:12px;height:12px;background:#dbeafe;border-radius:3px;border-left:3px solid #2563eb;"></div> Theory
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);">
-        <div style="width:12px;height:12px;background:#fce7f3;border-radius:3px;border-left:3px solid #db2777;"></div> Tutorial
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);">
-        <div style="width:12px;height:12px;background:#d1fae5;border-radius:3px;border-left:3px solid #059669;"></div> Lab
-      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);"><div style="width:12px;height:12px;background:#dbeafe;border-radius:3px;border-left:3px solid #2563eb;"></div> Theory</div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);"><div style="width:12px;height:12px;background:#fce7f3;border-radius:3px;border-left:3px solid #db2777;"></div> Tutorial</div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);"><div style="width:12px;height:12px;background:#d1fae5;border-radius:3px;border-left:3px solid #059669;"></div> Lab</div>
     </div>`;
   lucide.createIcons();
 }
 
-// Switch timetable tab
-window.switchTimetableTab = function(tab) {
+window.switchTimetableTab = function (tab) {
   document.querySelectorAll(".tt-tab").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(".tt-view").forEach(v => v.classList.remove("active"));
   document.getElementById("tttab-" + tab).classList.add("active");
@@ -2823,42 +2732,10 @@ window.switchTimetableTab = function(tab) {
   lucide.createIcons();
 };
 
-// ====== NAVIGATION ======
-window.showSection = function(id, el = null) {
-  document.querySelectorAll(".section-content").forEach(s => s.classList.remove("active"));
-  document.getElementById(id).classList.add("active");
-  document.querySelectorAll(".nav-item").forEach(t => t.classList.remove("active"));
-  if (el) el.classList.add("active");
-  const titles = {
-    profile: "My Profile", timetable: "Timetable", exams: "Examinations",
-    assignments: "Assignments", results: "Results", attendance: "Attendance",
-    portfolio: "Portfolio", leaves: "Leave Management", grievance: "Help Desk",
-    reevaluation: "Re-Evaluation"
-  };
-  document.getElementById("topbarTitle").innerText = titles[id] || id;
-  // Re-render timetable today view when navigating to it (so clock/now is fresh)
-  if (id === "timetable") {
-    renderTimetableToday();
-  }
-  lucide.createIcons();
-};
- 
-// ====== PORTFOLIO TAB SWITCH ======
-window.switchPortfolioTab = function(tab) {
-  document.querySelectorAll(".portfolio-tab").forEach(t => t.classList.remove("active"));
-  document.querySelectorAll(".portfolio-view").forEach(v => v.classList.remove("active"));
-  document.getElementById("ptab-" + tab).classList.add("active");
-  document.getElementById("pview-" + tab).classList.add("active");
-  if (tab === "preview") renderPortfolioPreview();
-  if (tab === "export") renderExportLinks();
-  lucide.createIcons();
-};
- 
 // ================================================================
-// ========== LEAVE MANAGEMENT FUNCTIONS =========================
+// LEAVE MANAGEMENT
 // ================================================================
- 
-window.switchLeaveTab = function(tab) {
+window.switchLeaveTab = function (tab) {
   document.querySelectorAll(".leave-tab").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(".leave-view").forEach(v => v.classList.remove("active"));
   document.getElementById("ltab-" + tab).classList.add("active");
@@ -2867,8 +2744,8 @@ window.switchLeaveTab = function(tab) {
   if (tab === "calendar") renderLeaveCalendar();
   lucide.createIcons();
 };
- 
-window.selectLeaveType = function(el, type) {
+
+window.selectLeaveType = function (el, type) {
   document.querySelectorAll(".leave-type-card").forEach(c => {
     c.classList.remove("selected");
     c.querySelector(".lt-icon").style.background = "var(--white)";
@@ -2878,72 +2755,65 @@ window.selectLeaveType = function(el, type) {
   selectedLeaveType = type;
   document.getElementById("selectedLeaveType").value = type;
 };
- 
+
 function setupLeaveDateListeners() {
   const fromEl = document.getElementById("leaveFromDate");
-  const toEl = document.getElementById("leaveToDate");
+  const toEl   = document.getElementById("leaveToDate");
   if (!fromEl || !toEl) return;
   const update = () => {
-    const from = new Date(fromEl.value);
-    const to = new Date(toEl.value);
+    const from    = new Date(fromEl.value);
+    const to      = new Date(toEl.value);
     const display = document.getElementById("leaveDurationDisplay");
-    const text = document.getElementById("leaveDurationText");
+    const text    = document.getElementById("leaveDurationText");
     if (fromEl.value && toEl.value && to >= from) {
       const diff = Math.round((to - from) / (1000 * 60 * 60 * 24)) + 1;
       display.style.display = "block";
-      text.innerText = `${diff} day${diff > 1 ? "s" : ""} selected (${from.toLocaleDateString("en-IN", {day:"2-digit",month:"short"})} – ${to.toLocaleDateString("en-IN", {day:"2-digit",month:"short"})})`;
+      text.innerText = `${diff} day${diff > 1 ? "s" : ""} selected (${from.toLocaleDateString("en-IN",{day:"2-digit",month:"short"})} – ${to.toLocaleDateString("en-IN",{day:"2-digit",month:"short"})})`;
       lucide.createIcons();
-    } else {
-      display.style.display = "none";
-    }
+    } else { display.style.display = "none"; }
   };
   fromEl.addEventListener("change", update);
   toEl.addEventListener("change", update);
 }
- 
+
 async function loadLeaveData() {
   if (!auth.currentUser || !studentData) return;
   try {
-    const q = query(
-      collection(db, "leave_applications"),
+    const snap = await getDocs(query(collection(db, "leave_applications"),
       where("studentId", "==", auth.currentUser.uid),
-      where("department", "==", studentData.department)
-    );
-    const snap = await getDocs(q);
+      where("department", "==", studentData.department)));
     allLeaveApplications = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     updateLeaveStats();
-  } catch (err) {
-    console.error("Leave load error:", err);
-  }
+  } catch (err) { console.error("Leave load error:", err); }
 }
- 
+
 function updateLeaveStats() {
-  const total = allLeaveApplications.length;
+  const total    = allLeaveApplications.length;
   const approved = allLeaveApplications.filter(l => l.status === "Approved").length;
-  const pending = allLeaveApplications.filter(l => l.status === "Pending").length;
+  const pending  = allLeaveApplications.filter(l => l.status === "Pending").length;
   const rejected = allLeaveApplications.filter(l => l.status === "Rejected").length;
-  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
-  setEl("lv-total", total); setEl("lv-approved", approved);
-  setEl("lv-pending", pending); setEl("lv-rejected", rejected);
+  [["lv-total",total],["lv-approved",approved],["lv-pending",pending],["lv-rejected",rejected]].forEach(([id,val]) => {
+    const el = document.getElementById(id); if (el) el.innerText = val;
+  });
 }
- 
-window.submitLeaveApplication = async function() {
+
+window.submitLeaveApplication = async function () {
   if (!auth.currentUser || !studentData) return;
   const fromDate = document.getElementById("leaveFromDate").value;
-  const toDate = document.getElementById("leaveToDate").value;
-  const reason = document.getElementById("leaveReason").value.trim();
+  const toDate   = document.getElementById("leaveToDate").value;
+  const reason   = document.getElementById("leaveReason").value.trim();
   const subjects = document.getElementById("leaveSubjects").value.trim();
-  const docLink = document.getElementById("leaveDocLink").value.trim();
+  const docLink  = document.getElementById("leaveDocLink").value.trim();
   if (!fromDate) return alert("Please select a From Date.");
-  if (!toDate) return alert("Please select a To Date.");
+  if (!toDate)   return alert("Please select a To Date.");
   if (new Date(toDate) < new Date(fromDate)) return alert("To Date cannot be before From Date.");
-  if (!reason) return alert("Please provide a reason for the leave.");
+  if (!reason)   return alert("Please provide a reason for the leave.");
   const btn = document.getElementById("leaveSubmitBtn");
   btn.disabled = true;
   btn.innerHTML = `<i data-lucide="loader" size="15"></i> Submitting...`;
   lucide.createIcons();
   try {
-    const days = Math.round((new Date(toDate) - new Date(fromDate)) / (1000 * 60 * 60 * 24)) + 1;
+    const days    = Math.round((new Date(toDate) - new Date(fromDate)) / (1000 * 60 * 60 * 24)) + 1;
     const payload = {
       studentId: auth.currentUser.uid, studentName: studentData.name.trim(),
       prn: studentData.prn, department: studentData.department, batch: studentData.batch,
@@ -2955,7 +2825,7 @@ window.submitLeaveApplication = async function() {
     const ref = await addDoc(collection(db, "leave_applications"), payload);
     allLeaveApplications.push({ id: ref.id, ...payload, appliedAt: { toDate: () => new Date() } });
     updateLeaveStats();
-    resetLeaveForm();
+    window.resetLeaveForm();
     btn.disabled = false;
     btn.innerHTML = `<i data-lucide="send" size="15"></i> Submit Application`;
     lucide.createIcons();
@@ -2968,52 +2838,40 @@ window.submitLeaveApplication = async function() {
     alert("Failed to submit. Please try again.");
   }
 };
- 
-window.resetLeaveForm = function() {
-  document.getElementById("leaveFromDate").value = "";
-  document.getElementById("leaveToDate").value = "";
-  document.getElementById("leaveReason").value = "";
-  document.getElementById("leaveSubjects").value = "";
-  document.getElementById("leaveDocLink").value = "";
+
+window.resetLeaveForm = function () {
+  ["leaveFromDate","leaveToDate","leaveReason","leaveSubjects","leaveDocLink"].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = "";
+  });
   document.getElementById("leaveDurationDisplay").style.display = "none";
   document.querySelectorAll(".leave-type-card").forEach(c => c.classList.remove("selected"));
-  const firstCard = document.querySelector(".leave-type-card[data-type='Medical']");
-  if (firstCard) { firstCard.classList.add("selected"); selectedLeaveType = "Medical"; }
+  const first = document.querySelector(".leave-type-card[data-type='Medical']");
+  if (first) { first.classList.add("selected"); selectedLeaveType = "Medical"; }
 };
- 
+
 function renderLeaveHistory(leaves) {
   const container = document.getElementById("leaveHistoryList");
   if (!container) return;
-  if (leaves.length === 0) {
+  if (!leaves.length) {
     container.innerHTML = `<div class="empty-state"><i data-lucide="calendar-off" size="40"></i><p>No leave applications found.</p></div>`;
     lucide.createIcons(); return;
   }
   const sorted = [...leaves].sort((a, b) => {
-    const tA = a.appliedAt?.seconds || (a.appliedAt?.toDate ? a.appliedAt.toDate().getTime() / 1000 : 0);
-    const tB = b.appliedAt?.seconds || (b.appliedAt?.toDate ? b.appliedAt.toDate().getTime() / 1000 : 0);
+    const tA = a.appliedAt?.seconds || (a.appliedAt?.toDate ? a.appliedAt.toDate().getTime()/1000 : 0);
+    const tB = b.appliedAt?.seconds || (b.appliedAt?.toDate ? b.appliedAt.toDate().getTime()/1000 : 0);
     return tB - tA;
   });
-  const statusConfig = {
-    "Pending":   { bg: "#fef3c7", color: "#92400e" },
-    "Approved":  { bg: "#dcfce7", color: "#166534" },
-    "Rejected":  { bg: "#fee2e2", color: "#991b1b" },
-    "Cancelled": { bg: "#f1f5f9", color: "#475569" }
-  };
-  const typeIcons = {
-    "Medical": "stethoscope", "Personal": "user", "Family Emergency": "heart",
-    "Event/Competition": "trophy", "Academic": "book", "Other": "more-horizontal"
-  };
+  const sc  = { Pending:{bg:"#fef3c7",color:"#92400e"}, Approved:{bg:"#dcfce7",color:"#166534"}, Rejected:{bg:"#fee2e2",color:"#991b1b"}, Cancelled:{bg:"#f1f5f9",color:"#475569"} };
+  const ico = { Medical:"stethoscope", Personal:"user", "Family Emergency":"heart", "Event/Competition":"trophy", Academic:"book", Other:"more-horizontal" };
   container.innerHTML = sorted.map(leave => {
-    const sc = statusConfig[leave.status] || statusConfig["Pending"];
-    const icon = typeIcons[leave.leaveType] || "calendar-off";
-    const fromFmt = new Date(leave.fromDate + "T00:00:00").toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" });
-    const toFmt   = new Date(leave.toDate + "T00:00:00").toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" });
-    const appliedOn = leave.appliedAt?.toDate ? leave.appliedAt.toDate().toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }) : "—";
-    const canCancel = leave.status === "Pending";
-    const facultyNoteHTML = leave.facultyNote
-      ? `<div class="lhi-faculty-note"><strong>${leave.reviewedBy || "Faculty"}</strong>: ${leave.facultyNote}</div>` : "";
-    const docHTML = leave.documentLink
-      ? `<a href="${leave.documentLink}" target="_blank" class="btn-outline" style="padding:6px 12px;font-size:12px;margin-top:8px;display:inline-flex;"><i data-lucide="paperclip" size="12"></i> View Document</a>` : "";
+    const s          = sc[leave.status] || sc.Pending;
+    const icon       = ico[leave.leaveType] || "calendar-off";
+    const fromFmt    = new Date(leave.fromDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+    const toFmt      = new Date(leave.toDate+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+    const appliedOn  = leave.appliedAt?.toDate ? leave.appliedAt.toDate().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "—";
+    const canCancel  = leave.status === "Pending";
+    const noteHTML   = leave.facultyNote ? `<div class="lhi-faculty-note"><strong>${leave.reviewedBy||"Faculty"}</strong>: ${leave.facultyNote}</div>` : "";
+    const docHTML    = leave.documentLink ? `<a href="${leave.documentLink}" target="_blank" class="btn-outline" style="padding:6px 12px;font-size:12px;margin-top:8px;display:inline-flex;"><i data-lucide="paperclip" size="12"></i> View Document</a>` : "";
     return `
       <div class="leave-history-item" id="lhi-${leave.id}">
         <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;">
@@ -3024,32 +2882,32 @@ function renderLeaveHistory(leaves) {
             <div class="lhi-title">${leave.leaveType} Leave</div>
             <div class="lhi-meta">
               <span><i data-lucide="calendar" size="12"></i> ${fromFmt} – ${toFmt}</span>
-              <span><i data-lucide="clock" size="12"></i> ${leave.days} day${leave.days > 1 ? "s" : ""}</span>
+              <span><i data-lucide="clock" size="12"></i> ${leave.days} day${leave.days>1?"s":""}</span>
               <span><i data-lucide="send" size="12"></i> Applied: ${appliedOn}</span>
             </div>
             <div class="lhi-reason">${leave.reason}</div>
-            ${facultyNoteHTML}${docHTML}
+            ${noteHTML}${docHTML}
             ${canCancel ? `<button class="cancel-leave-btn mt-10" onclick="cancelLeave('${leave.id}')"><i data-lucide="x" size="12"></i> Cancel</button>` : ""}
           </div>
           <div style="margin-left:auto;flex-shrink:0;">
-            <span class="status-pill" style="background:${sc.bg};color:${sc.color};">${leave.status}</span>
+            <span class="status-pill" style="background:${s.bg};color:${s.color};">${leave.status}</span>
           </div>
         </div>
       </div>`;
   }).join("");
   lucide.createIcons();
 }
- 
-window.filterLeaveHistory = function() {
-  const statusFilter = document.getElementById("leaveFilterStatus").value;
-  const typeFilter = document.getElementById("leaveFilterType").value;
-  let filtered = [...allLeaveApplications];
-  if (statusFilter) filtered = filtered.filter(l => l.status === statusFilter);
-  if (typeFilter) filtered = filtered.filter(l => l.leaveType === typeFilter);
-  renderLeaveHistory(filtered);
+
+window.filterLeaveHistory = function () {
+  const sf = document.getElementById("leaveFilterStatus").value;
+  const tf = document.getElementById("leaveFilterType").value;
+  let f = [...allLeaveApplications];
+  if (sf) f = f.filter(l => l.status === sf);
+  if (tf) f = f.filter(l => l.leaveType === tf);
+  renderLeaveHistory(f);
 };
- 
-window.cancelLeave = async function(leaveId) {
+
+window.cancelLeave = async function (leaveId) {
   if (!confirm("Are you sure you want to cancel this leave application?")) return;
   try {
     await updateDoc(doc(db, "leave_applications", leaveId), { status: "Cancelled", cancelledAt: serverTimestamp() });
@@ -3057,96 +2915,97 @@ window.cancelLeave = async function(leaveId) {
     if (idx !== -1) allLeaveApplications[idx].status = "Cancelled";
     updateLeaveStats();
     renderLeaveHistory(allLeaveApplications);
-  } catch (err) {
-    console.error("Cancel leave error:", err);
-    alert("Failed to cancel. Please try again.");
-  }
+  } catch (err) { console.error("Cancel leave error:", err); alert("Failed to cancel."); }
 };
- 
-window.renderLeaveCalendar = function() {
+
+window.renderLeaveCalendar = function () {
   const label = document.getElementById("calendarMonthLabel");
   const grid  = document.getElementById("calendarDaysGrid");
   if (!label || !grid) return;
-  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  label.innerText = `${monthNames[calendarMonth]} ${calendarYear}`;
-  const approvedLeaveDates = new Set();
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  label.innerText = `${months[calendarMonth]} ${calendarYear}`;
+  const approvedDates = new Set();
   allLeaveApplications.forEach(leave => {
     if (leave.status !== "Approved") return;
-    let cur = new Date(leave.fromDate + "T00:00:00");
-    const end = new Date(leave.toDate + "T00:00:00");
+    let cur = new Date(leave.fromDate+"T00:00:00");
+    const end = new Date(leave.toDate+"T00:00:00");
     while (cur <= end) {
-      if (cur.getFullYear() === calendarYear && cur.getMonth() === calendarMonth) {
-        approvedLeaveDates.add(cur.getDate());
-      }
-      cur.setDate(cur.getDate() + 1);
+      if (cur.getFullYear() === calendarYear && cur.getMonth() === calendarMonth) approvedDates.add(cur.getDate());
+      cur.setDate(cur.getDate()+1);
     }
   });
-  const today = new Date();
-  const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
-  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const today      = new Date();
+  const firstDay   = new Date(calendarYear, calendarMonth, 1).getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth+1, 0).getDate();
   let html = "";
   for (let i = 0; i < firstDay; i++) html += `<div class="lc-day empty"></div>`;
   for (let d = 1; d <= daysInMonth; d++) {
-    const isToday = d === today.getDate() && calendarMonth === today.getMonth() && calendarYear === today.getFullYear();
-    const isLeave = approvedLeaveDates.has(d);
-    let cls = "lc-day" + (isToday ? " today" : (isLeave ? " leave-day" : ""));
-    html += `<div class="${cls}">${d}</div>`;
+    const isToday = d===today.getDate() && calendarMonth===today.getMonth() && calendarYear===today.getFullYear();
+    const isLeave = approvedDates.has(d);
+    html += `<div class="lc-day${isToday?" today":isLeave?" leave-day":""}">${d}</div>`;
   }
   grid.innerHTML = html;
 };
- 
-window.changeCalendarMonth = function(dir) {
+
+window.changeCalendarMonth = function (dir) {
   calendarMonth += dir;
   if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
   if (calendarMonth < 0)  { calendarMonth = 11; calendarYear--; }
-  renderLeaveCalendar();
+  window.renderLeaveCalendar();
 };
- 
+
 document.addEventListener("DOMContentLoaded", () => {
   setupLeaveDateListeners();
-  const today = new Date().toISOString().split("T")[0];
+  const today  = new Date().toISOString().split("T")[0];
   const fromEl = document.getElementById("leaveFromDate");
-  const toEl = document.getElementById("leaveToDate");
+  const toEl   = document.getElementById("leaveToDate");
   if (fromEl) fromEl.min = today;
-  if (toEl) toEl.min = today;
+  if (toEl)   toEl.min   = today;
 });
 
 // ================================================================
-// ========== PORTFOLIO FUNCTIONS =================================
+// PORTFOLIO
 // ================================================================
- 
+window.switchPortfolioTab = function (tab) {
+  document.querySelectorAll(".portfolio-tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".portfolio-view").forEach(v => v.classList.remove("active"));
+  document.getElementById("ptab-" + tab).classList.add("active");
+  document.getElementById("pview-" + tab).classList.add("active");
+  if (tab === "preview") renderPortfolioPreview();
+  if (tab === "export")  renderExportLinks();
+  lucide.createIcons();
+};
+
 async function loadPortfolioData() {
   if (!auth.currentUser) return;
   try {
     const pfDoc = await getDoc(doc(db, "portfolios", auth.currentUser.uid));
     if (!pfDoc.exists()) return;
     const data = pfDoc.data();
-    const fields = ["summary","linkedin","github","website","email","phone","location","availability"];
-    fields.forEach(f => { const el = document.getElementById("pf-" + f); if (el && data[f]) el.value = data[f]; });
-    if (Array.isArray(data.skills)) { portfolioSkills = data.skills; portfolioSkills.forEach(s => addSkillChip(s)); }
-    const lists = ["schooling","education","certifications","experience","projects"];
-    lists.forEach(type => { if (Array.isArray(data[type])) data[type].forEach(entry => addEntry(type, entry)); });
+    ["summary","linkedin","github","website","email","phone","location","availability"].forEach(f => {
+      const el = document.getElementById("pf-"+f); if (el && data[f]) el.value = data[f];
+    });
+    if (Array.isArray(data.skills)) { portfolioSkills = data.skills; portfolioSkills.forEach(s => window.addSkillChip(s)); }
+    ["schooling","education","certifications","experience","projects"].forEach(type => {
+      if (Array.isArray(data[type])) data[type].forEach(entry => window.addEntry(type, entry));
+    });
   } catch (err) { console.error("Portfolio load error:", err); }
 }
- 
-window.savePortfolio = async function() {
+
+window.savePortfolio = async function () {
   if (!auth.currentUser) return;
   try {
     const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
-    const collectEntries = (type) => {
-      const container = document.getElementById(type + "-list");
-      if (!container) return [];
+    const collectEntries = type => {
+      const container = document.getElementById(type+"-list"); if (!container) return [];
       const entries = [];
       container.querySelectorAll(".dynamic-entry").forEach(entry => {
-        const obj = {};
-        entry.querySelectorAll("[data-field]").forEach(el => { obj[el.dataset.field] = el.value.trim(); });
-        entries.push(obj);
+        const obj = {}; entry.querySelectorAll("[data-field]").forEach(el => { obj[el.dataset.field] = el.value.trim(); }); entries.push(obj);
       });
       return entries;
     };
-    const portfolioPayload = {
-      studentId: auth.currentUser.uid, studentName: studentData ? studentData.name : "",
-      department: studentData ? studentData.department : "", prn: studentData ? studentData.prn : "",
+    await setDoc(doc(db, "portfolios", auth.currentUser.uid), {
+      studentId: auth.currentUser.uid, studentName: studentData?.name||"", department: studentData?.department||"", prn: studentData?.prn||"",
       summary: getVal("pf-summary"), linkedin: getVal("pf-linkedin"), github: getVal("pf-github"),
       website: getVal("pf-website"), email: getVal("pf-email"), phone: getVal("pf-phone"),
       location: getVal("pf-location"), availability: getVal("pf-availability"),
@@ -3154,146 +3013,97 @@ window.savePortfolio = async function() {
       schooling: collectEntries("schooling"), education: collectEntries("education"),
       certifications: collectEntries("certifications"), experience: collectEntries("experience"),
       projects: collectEntries("projects"), updatedAt: serverTimestamp()
-    };
-    await setDoc(doc(db, "portfolios", auth.currentUser.uid), portfolioPayload);
-    const indicator = document.getElementById("portfolioSaveIndicator");
-    if (indicator) { indicator.classList.add("visible"); setTimeout(() => indicator.classList.remove("visible"), 3000); }
+    });
+    const ind = document.getElementById("portfolioSaveIndicator");
+    if (ind) { ind.classList.add("visible"); setTimeout(() => ind.classList.remove("visible"), 3000); }
     lucide.createIcons();
   } catch (err) { console.error("Save portfolio error:", err); alert("Failed to save portfolio."); }
 };
- 
-window.addEntry = function(type, data = {}) {
-  const container = document.getElementById(type + "-list");
-  if (!container) return;
-  const id = "entry-" + Date.now() + "-" + Math.random().toString(36).substr(2,5);
+
+window.addEntry = function (type, data = {}) {
+  const container = document.getElementById(type+"-list"); if (!container) return;
+  const id  = "entry-"+Date.now()+"-"+Math.random().toString(36).substr(2,5);
   const div = document.createElement("div");
   div.className = "dynamic-entry"; div.id = id;
   let html = `<button class="entry-remove-btn" onclick="removeEntry('${id}')" title="Remove">×</button>`;
-  if (type === "schooling") {
-    html += `<div class="entry-grid-2">
-      <div><label class="form-label">School Name</label><input type="text" data-field="school" value="${data.school||''}" placeholder="e.g. Vidya Niketan High School"></div>
-      <div><label class="form-label">Board</label><input type="text" data-field="board" value="${data.board||''}" placeholder="e.g. CBSE"></div>
-      <div><label class="form-label">Standard</label><input type="text" data-field="standard" value="${data.standard||''}" placeholder="e.g. 10th Grade"></div>
-      <div><label class="form-label">Year of Passing</label><input type="text" data-field="year" value="${data.year||''}" placeholder="e.g. 2020"></div>
-      <div><label class="form-label">Percentage / CGPA</label><input type="text" data-field="score" value="${data.score||''}" placeholder="e.g. 87.4%"></div>
-      <div><label class="form-label">City</label><input type="text" data-field="city" value="${data.city||''}" placeholder="e.g. Pune"></div>
-    </div>`;
-  } else if (type === "education") {
-    html += `<div class="entry-grid-2">
-      <div><label class="form-label">Institution Name</label><input type="text" data-field="institution" value="${data.institution||''}" placeholder="e.g. MIT Academy"></div>
-      <div><label class="form-label">Degree</label><input type="text" data-field="degree" value="${data.degree||''}" placeholder="e.g. B.E. Computer Engineering"></div>
-      <div><label class="form-label">Branch</label><input type="text" data-field="branch" value="${data.branch||''}" placeholder="e.g. AI"></div>
-      <div><label class="form-label">University</label><input type="text" data-field="university" value="${data.university||''}" placeholder="e.g. SPPU"></div>
-      <div><label class="form-label">Start Year</label><input type="text" data-field="startYear" value="${data.startYear||''}" placeholder="2022"></div>
-      <div><label class="form-label">End Year</label><input type="text" data-field="endYear" value="${data.endYear||''}" placeholder="2026"></div>
-      <div><label class="form-label">CGPA</label><input type="text" data-field="cgpa" value="${data.cgpa||''}" placeholder="9.2 / 10"></div>
-      <div><label class="form-label">Website</label><input type="url" data-field="institutionUrl" value="${data.institutionUrl||''}" placeholder="https://"></div>
-    </div>`;
-  } else if (type === "certifications") {
-    html += `<div class="entry-grid-2">
-      <div><label class="form-label">Certification Title</label><input type="text" data-field="title" value="${data.title||''}" placeholder="e.g. AWS Cloud Practitioner"></div>
-      <div><label class="form-label">Issuing Organization</label><input type="text" data-field="issuer" value="${data.issuer||''}" placeholder="e.g. Amazon Web Services"></div>
-      <div><label class="form-label">Issue Date</label><input type="text" data-field="issueDate" value="${data.issueDate||''}" placeholder="June 2024"></div>
-      <div><label class="form-label">Expiry Date</label><input type="text" data-field="expiryDate" value="${data.expiryDate||''}" placeholder="No Expiry"></div>
-      <div style="grid-column:1/-1;"><label class="form-label">Credential Link</label><input type="url" data-field="credentialUrl" value="${data.credentialUrl||''}" placeholder="https://"></div>
-    </div>`;
-  } else if (type === "experience") {
-    html += `<div class="entry-grid-2">
-      <div><label class="form-label">Company</label><input type="text" data-field="company" value="${data.company||''}" placeholder="e.g. Infosys Ltd."></div>
-      <div><label class="form-label">Role</label><input type="text" data-field="role" value="${data.role||''}" placeholder="e.g. Software Intern"></div>
-      <div><label class="form-label">Type</label><input type="text" data-field="type" value="${data.type||''}" placeholder="Internship / Full-time"></div>
-      <div><label class="form-label">Location</label><input type="text" data-field="location" value="${data.location||''}" placeholder="Pune, Maharashtra"></div>
-      <div><label class="form-label">Start Date</label><input type="text" data-field="startDate" value="${data.startDate||''}" placeholder="May 2024"></div>
-      <div><label class="form-label">End Date</label><input type="text" data-field="endDate" value="${data.endDate||''}" placeholder="July 2024"></div>
-      <div style="grid-column:1/-1;"><label class="form-label">Description</label><textarea data-field="description" rows="3">${data.description||''}</textarea></div>
-      <div style="grid-column:1/-1;"><label class="form-label">Company Website</label><input type="url" data-field="companyUrl" value="${data.companyUrl||''}" placeholder="https://"></div>
-    </div>`;
-  } else if (type === "projects") {
-    html += `<div class="entry-grid-2">
-      <div><label class="form-label">Project Title</label><input type="text" data-field="title" value="${data.title||''}" placeholder="e.g. Smart Attendance System"></div>
-      <div><label class="form-label">Technologies</label><input type="text" data-field="tech" value="${data.tech||''}" placeholder="Python, Flask, OpenCV"></div>
-      <div><label class="form-label">Project Type</label><input type="text" data-field="projectType" value="${data.projectType||''}" placeholder="Academic / Personal"></div>
-      <div><label class="form-label">Duration</label><input type="text" data-field="duration" value="${data.duration||''}" placeholder="Jan 2024 – Mar 2024"></div>
-      <div style="grid-column:1/-1;"><label class="form-label">Description</label><textarea data-field="description" rows="3">${data.description||''}</textarea></div>
-      <div><label class="form-label">Live Demo Link</label><input type="url" data-field="demoUrl" value="${data.demoUrl||''}" placeholder="https://"></div>
-      <div><label class="form-label">GitHub Link</label><input type="url" data-field="sourceUrl" value="${data.sourceUrl||''}" placeholder="https://github.com/"></div>
-    </div>`;
+  if (type==="schooling") {
+    html+=`<div class="entry-grid-2"><div><label class="form-label">School Name</label><input type="text" data-field="school" value="${data.school||''}" placeholder="e.g. Vidya Niketan High School"></div><div><label class="form-label">Board</label><input type="text" data-field="board" value="${data.board||''}" placeholder="e.g. CBSE"></div><div><label class="form-label">Standard</label><input type="text" data-field="standard" value="${data.standard||''}" placeholder="e.g. 10th Grade"></div><div><label class="form-label">Year of Passing</label><input type="text" data-field="year" value="${data.year||''}" placeholder="e.g. 2020"></div><div><label class="form-label">Percentage / CGPA</label><input type="text" data-field="score" value="${data.score||''}" placeholder="e.g. 87.4%"></div><div><label class="form-label">City</label><input type="text" data-field="city" value="${data.city||''}" placeholder="e.g. Pune"></div></div>`;
+  } else if (type==="education") {
+    html+=`<div class="entry-grid-2"><div><label class="form-label">Institution Name</label><input type="text" data-field="institution" value="${data.institution||''}" placeholder="e.g. MIT Academy"></div><div><label class="form-label">Degree</label><input type="text" data-field="degree" value="${data.degree||''}" placeholder="e.g. B.E. Computer Engineering"></div><div><label class="form-label">Branch</label><input type="text" data-field="branch" value="${data.branch||''}" placeholder="e.g. AI"></div><div><label class="form-label">University</label><input type="text" data-field="university" value="${data.university||''}" placeholder="e.g. SPPU"></div><div><label class="form-label">Start Year</label><input type="text" data-field="startYear" value="${data.startYear||''}" placeholder="2022"></div><div><label class="form-label">End Year</label><input type="text" data-field="endYear" value="${data.endYear||''}" placeholder="2026"></div><div><label class="form-label">CGPA</label><input type="text" data-field="cgpa" value="${data.cgpa||''}" placeholder="9.2 / 10"></div><div><label class="form-label">Website</label><input type="url" data-field="institutionUrl" value="${data.institutionUrl||''}" placeholder="https://"></div></div>`;
+  } else if (type==="certifications") {
+    html+=`<div class="entry-grid-2"><div><label class="form-label">Certification Title</label><input type="text" data-field="title" value="${data.title||''}" placeholder="e.g. AWS Cloud Practitioner"></div><div><label class="form-label">Issuing Organization</label><input type="text" data-field="issuer" value="${data.issuer||''}" placeholder="e.g. Amazon Web Services"></div><div><label class="form-label">Issue Date</label><input type="text" data-field="issueDate" value="${data.issueDate||''}" placeholder="June 2024"></div><div><label class="form-label">Expiry Date</label><input type="text" data-field="expiryDate" value="${data.expiryDate||''}" placeholder="No Expiry"></div><div style="grid-column:1/-1;"><label class="form-label">Credential Link</label><input type="url" data-field="credentialUrl" value="${data.credentialUrl||''}" placeholder="https://"></div></div>`;
+  } else if (type==="experience") {
+    html+=`<div class="entry-grid-2"><div><label class="form-label">Company</label><input type="text" data-field="company" value="${data.company||''}" placeholder="e.g. Infosys Ltd."></div><div><label class="form-label">Role</label><input type="text" data-field="role" value="${data.role||''}" placeholder="e.g. Software Intern"></div><div><label class="form-label">Type</label><input type="text" data-field="type" value="${data.type||''}" placeholder="Internship / Full-time"></div><div><label class="form-label">Location</label><input type="text" data-field="location" value="${data.location||''}" placeholder="Pune, Maharashtra"></div><div><label class="form-label">Start Date</label><input type="text" data-field="startDate" value="${data.startDate||''}" placeholder="May 2024"></div><div><label class="form-label">End Date</label><input type="text" data-field="endDate" value="${data.endDate||''}" placeholder="July 2024"></div><div style="grid-column:1/-1;"><label class="form-label">Description</label><textarea data-field="description" rows="3">${data.description||''}</textarea></div><div style="grid-column:1/-1;"><label class="form-label">Company Website</label><input type="url" data-field="companyUrl" value="${data.companyUrl||''}" placeholder="https://"></div></div>`;
+  } else if (type==="projects") {
+    html+=`<div class="entry-grid-2"><div><label class="form-label">Project Title</label><input type="text" data-field="title" value="${data.title||''}" placeholder="e.g. Smart Attendance System"></div><div><label class="form-label">Technologies</label><input type="text" data-field="tech" value="${data.tech||''}" placeholder="Python, Flask, OpenCV"></div><div><label class="form-label">Project Type</label><input type="text" data-field="projectType" value="${data.projectType||''}" placeholder="Academic / Personal"></div><div><label class="form-label">Duration</label><input type="text" data-field="duration" value="${data.duration||''}" placeholder="Jan 2024 – Mar 2024"></div><div style="grid-column:1/-1;"><label class="form-label">Description</label><textarea data-field="description" rows="3">${data.description||''}</textarea></div><div><label class="form-label">Live Demo Link</label><input type="url" data-field="demoUrl" value="${data.demoUrl||''}" placeholder="https://"></div><div><label class="form-label">GitHub Link</label><input type="url" data-field="sourceUrl" value="${data.sourceUrl||''}" placeholder="https://github.com/"></div></div>`;
   }
   div.innerHTML = html;
   container.appendChild(div);
   lucide.createIcons();
 };
- 
-window.removeEntry = function(id) { const el = document.getElementById(id); if (el) el.remove(); };
- 
-window.addSkillChip = function(skillText) {
+
+window.removeEntry = id => { const el = document.getElementById(id); if (el) el.remove(); };
+
+window.addSkillChip = function (skillText) {
   const skill = skillText.trim();
   if (!skill || portfolioSkills.includes(skill)) return;
   portfolioSkills.push(skill);
-  const area = document.getElementById("skillsChipArea");
+  const area  = document.getElementById("skillsChipArea");
   const input = document.getElementById("skillInput");
   if (!area || !input) return;
   const chip = document.createElement("div");
   chip.className = "skill-chip"; chip.dataset.skill = skill;
-  chip.innerHTML = `${skill}<button class="skill-chip-remove" onclick="removeSkillChip('${skill.replace(/'/g,"\\'")}', this.parentElement)" title="Remove">×</button>`;
+  chip.innerHTML = `${skill}<button class="skill-chip-remove" onclick="removeSkillChip('${skill.replace(/'/g,"\\'")}',this.parentElement)" title="Remove">×</button>`;
   area.insertBefore(chip, input);
   input.value = "";
 };
- 
-window.removeSkillChip = function(skill, chipEl) {
+
+window.removeSkillChip = function (skill, chipEl) {
   portfolioSkills = portfolioSkills.filter(s => s !== skill);
   if (chipEl) chipEl.remove();
 };
- 
+
 document.addEventListener("DOMContentLoaded", () => {
   const skillInput = document.getElementById("skillInput");
   if (skillInput) {
-    skillInput.addEventListener("keydown", (e) => {
+    skillInput.addEventListener("keydown", e => {
       if (e.key === "Enter" || e.key === ",") {
         e.preventDefault();
-        const val = skillInput.value.replace(/,/g, "").trim();
-        if (val) addSkillChip(val);
+        const val = skillInput.value.replace(/,/g,"").trim();
+        if (val) window.addSkillChip(val);
       } else if (e.key === "Backspace" && skillInput.value === "" && portfolioSkills.length > 0) {
-        const last = portfolioSkills[portfolioSkills.length - 1];
-        const area = document.getElementById("skillsChipArea");
+        const last  = portfolioSkills[portfolioSkills.length-1];
+        const area  = document.getElementById("skillsChipArea");
         const chips = area ? area.querySelectorAll(".skill-chip") : [];
-        if (chips.length > 0) chips[chips.length - 1].remove();
+        if (chips.length) chips[chips.length-1].remove();
         portfolioSkills = portfolioSkills.filter(s => s !== last);
       }
     });
   }
 });
- 
+
 function renderPortfolioPreview() {
-  const box = document.getElementById("portfolioPreviewBox");
-  if (!box) return;
+  const box = document.getElementById("portfolioPreviewBox"); if (!box) return;
   const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
-  const collectEntries = (type) => {
-    const container = document.getElementById(type + "-list");
-    if (!container) return [];
+  const collectEntries = type => {
+    const container = document.getElementById(type+"-list"); if (!container) return [];
     const entries = [];
     container.querySelectorAll(".dynamic-entry").forEach(entry => {
-      const obj = {};
-      entry.querySelectorAll("[data-field]").forEach(el => { obj[el.dataset.field] = el.value.trim(); });
-      entries.push(obj);
+      const obj = {}; entry.querySelectorAll("[data-field]").forEach(el => { obj[el.dataset.field] = el.value.trim(); }); entries.push(obj);
     });
     return entries;
   };
-  const name = studentData ? studentData.name : "Student";
-  const dept = studentData ? studentData.department : "";
-  const prn = studentData ? studentData.prn : "";
-  const summary = getVal("pf-summary");
-  const linkedin = getVal("pf-linkedin"); const github = getVal("pf-github"); const website = getVal("pf-website");
-  const email = getVal("pf-email"); const phone = getVal("pf-phone"); const location = getVal("pf-location"); const availability = getVal("pf-availability");
-  const schoolingEntries = collectEntries("schooling"); const educationEntries = collectEntries("education");
-  const certEntries = collectEntries("certifications"); const expEntries = collectEntries("experience"); const projEntries = collectEntries("projects");
-  const linkTag = (url, label) => url ? `<a href="${url}" target="_blank" class="preview-link" style="margin-right:10px;">${label} ↗</a>` : "";
-  const renderSchooling = schoolingEntries.map(s => `<div class="preview-entry"><div class="preview-entry-title">${s.school||"—"} · ${s.standard||""}</div><div class="preview-entry-sub">${s.board||""} · ${s.year||""} · ${s.city||""}</div>${s.score?`<div class="preview-entry-sub">Score: <b>${s.score}</b></div>`:""}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No schooling added.</p>`;
-  const renderEducation = educationEntries.map(e => `<div class="preview-entry"><div class="preview-entry-title">${e.degree||"—"} · ${e.branch||""}</div><div class="preview-entry-sub">${e.institution||""} · ${e.university||""}</div><div class="preview-entry-sub">${e.startYear||""} – ${e.endYear||""} · CGPA: ${e.cgpa||"N/A"}</div>${linkTag(e.institutionUrl,"Website")}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No education added.</p>`;
-  const renderCerts = certEntries.map(c => `<div class="preview-entry"><div class="preview-entry-title">${c.title||"—"}</div><div class="preview-entry-sub">${c.issuer||""} · ${c.issueDate||""}</div>${linkTag(c.credentialUrl,"View Certificate")}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No certifications added.</p>`;
-  const renderExp = expEntries.map(e => `<div class="preview-entry"><div class="preview-entry-title">${e.role||"—"} · ${e.company||""}</div><div class="preview-entry-sub">${e.type||""} · ${e.location||""} · ${e.startDate||""} – ${e.endDate||""}</div>${e.description?`<div class="preview-entry-desc">${e.description}</div>`:""}</div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No experience added.</p>`;
-  const renderProjects = projEntries.map(p => `<div class="preview-entry"><div class="preview-entry-title">${p.title||"—"} · ${p.projectType||""}</div><div class="preview-entry-sub">${p.tech||""} · ${p.duration||""}</div>${p.description?`<div class="preview-entry-desc">${p.description}</div>`:""}<div style="margin-top:6px;">${linkTag(p.demoUrl,"Live Demo")}${linkTag(p.sourceUrl,"Source Code")}</div></div>`).join("") || `<p style="color:var(--muted);font-size:13px;">No projects added.</p>`;
-  const renderSkills = portfolioSkills.length > 0 ? portfolioSkills.map(s => `<span class="preview-skill-tag">${s}</span>`).join("") : `<p style="color:var(--muted);font-size:13px;">No skills added.</p>`;
+  const name     = studentData?.name||"Student", dept = studentData?.department||"", prn = studentData?.prn||"";
+  const summary  = getVal("pf-summary"), linkedin = getVal("pf-linkedin"), github = getVal("pf-github"), website = getVal("pf-website");
+  const email    = getVal("pf-email"), phone = getVal("pf-phone"), location = getVal("pf-location"), availability = getVal("pf-availability");
+  const sE = collectEntries("schooling"), edE = collectEntries("education"), cE = collectEntries("certifications"), exE = collectEntries("experience"), pE = collectEntries("projects");
+  const lnk = (url,lbl) => url ? `<a href="${url}" target="_blank" class="preview-link" style="margin-right:10px;">${lbl} ↗</a>` : "";
+  const rSc = sE.map(s=>`<div class="preview-entry"><div class="preview-entry-title">${s.school||"—"} · ${s.standard||""}</div><div class="preview-entry-sub">${s.board||""} · ${s.year||""} · ${s.city||""}</div>${s.score?`<div class="preview-entry-sub">Score: <b>${s.score}</b></div>`:""}</div>`).join("")||`<p style="color:var(--muted);font-size:13px;">No schooling added.</p>`;
+  const rEd = edE.map(e=>`<div class="preview-entry"><div class="preview-entry-title">${e.degree||"—"} · ${e.branch||""}</div><div class="preview-entry-sub">${e.institution||""} · ${e.university||""}</div><div class="preview-entry-sub">${e.startYear||""} – ${e.endYear||""} · CGPA: ${e.cgpa||"N/A"}</div>${lnk(e.institutionUrl,"Website")}</div>`).join("")||`<p style="color:var(--muted);font-size:13px;">No education added.</p>`;
+  const rCe = cE.map(c=>`<div class="preview-entry"><div class="preview-entry-title">${c.title||"—"}</div><div class="preview-entry-sub">${c.issuer||""} · ${c.issueDate||""}</div>${lnk(c.credentialUrl,"View Certificate")}</div>`).join("")||`<p style="color:var(--muted);font-size:13px;">No certifications added.</p>`;
+  const rEx = exE.map(e=>`<div class="preview-entry"><div class="preview-entry-title">${e.role||"—"} · ${e.company||""}</div><div class="preview-entry-sub">${e.type||""} · ${e.location||""} · ${e.startDate||""} – ${e.endDate||""}</div>${e.description?`<div class="preview-entry-desc">${e.description}</div>`:""}</div>`).join("")||`<p style="color:var(--muted);font-size:13px;">No experience added.</p>`;
+  const rPr = pE.map(p=>`<div class="preview-entry"><div class="preview-entry-title">${p.title||"—"} · ${p.projectType||""}</div><div class="preview-entry-sub">${p.tech||""} · ${p.duration||""}</div>${p.description?`<div class="preview-entry-desc">${p.description}</div>`:""}<div style="margin-top:6px;">${lnk(p.demoUrl,"Live Demo")}${lnk(p.sourceUrl,"Source Code")}</div></div>`).join("")||`<p style="color:var(--muted);font-size:13px;">No projects added.</p>`;
+  const rSk = portfolioSkills.length>0 ? portfolioSkills.map(s=>`<span class="preview-skill-tag">${s}</span>`).join("") : `<p style="color:var(--muted);font-size:13px;">No skills added.</p>`;
   const contactParts = [email?`<span>${email}</span>`:"",phone?`<span>${phone}</span>`:"",location?`<span>${location}</span>`:"",availability?`<span style="color:var(--green);font-weight:700;">${availability}</span>`:""].filter(Boolean).join(`<span style="color:var(--border);margin:0 6px;">|</span>`);
   box.innerHTML = `
     <div class="preview-hero">
@@ -3308,29 +3118,25 @@ function renderPortfolioPreview() {
     <div class="preview-body">
       ${summary?`<div class="preview-section"><div class="preview-section-title"><i data-lucide="align-left" size="13"></i> Profile Summary</div><p style="font-size:14px;line-height:1.7;">${summary}</p></div>`:""}
       ${contactParts?`<div class="preview-section"><div class="preview-section-title"><i data-lucide="phone" size="13"></i> Contact</div><div style="font-size:13px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">${contactParts}</div></div>`:""}
-      <div class="preview-section"><div class="preview-section-title"><i data-lucide="graduation-cap" size="13"></i> Education</div>${renderEducation}</div>
-      <div class="preview-section"><div class="preview-section-title"><i data-lucide="school" size="13"></i> Schooling</div>${renderSchooling}</div>
-      <div class="preview-section"><div class="preview-section-title"><i data-lucide="badge-check" size="13"></i> Certifications</div>${renderCerts}</div>
-      <div class="preview-section"><div class="preview-section-title"><i data-lucide="briefcase" size="13"></i> Experience</div>${renderExp}</div>
-      <div class="preview-section"><div class="preview-section-title"><i data-lucide="folder-open" size="13"></i> Projects</div>${renderProjects}</div>
-      <div class="preview-section"><div class="preview-section-title"><i data-lucide="cpu" size="13"></i> Technical Skills</div>${renderSkills}</div>
+      <div class="preview-section"><div class="preview-section-title"><i data-lucide="graduation-cap" size="13"></i> Education</div>${rEd}</div>
+      <div class="preview-section"><div class="preview-section-title"><i data-lucide="school" size="13"></i> Schooling</div>${rSc}</div>
+      <div class="preview-section"><div class="preview-section-title"><i data-lucide="badge-check" size="13"></i> Certifications</div>${rCe}</div>
+      <div class="preview-section"><div class="preview-section-title"><i data-lucide="briefcase" size="13"></i> Experience</div>${rEx}</div>
+      <div class="preview-section"><div class="preview-section-title"><i data-lucide="folder-open" size="13"></i> Projects</div>${rPr}</div>
+      <div class="preview-section"><div class="preview-section-title"><i data-lucide="cpu" size="13"></i> Technical Skills</div>${rSk}</div>
     </div>`;
   lucide.createIcons();
 }
- 
+
 function renderExportLinks() {
-  const box = document.getElementById("shareLinksBox");
-  if (!box) return;
+  const box = document.getElementById("shareLinksBox"); if (!box) return;
   const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
   const links = [
-    { label: "LinkedIn", icon: "linkedin", url: getVal("pf-linkedin") },
-    { label: "GitHub", icon: "github", url: getVal("pf-github") },
-    { label: "Portfolio Website", icon: "globe", url: getVal("pf-website") }
+    { label:"LinkedIn",          icon:"linkedin", url: getVal("pf-linkedin") },
+    { label:"GitHub",            icon:"github",   url: getVal("pf-github") },
+    { label:"Portfolio Website", icon:"globe",    url: getVal("pf-website") }
   ].filter(l => l.url);
-  if (links.length === 0) {
-    box.innerHTML = `<div class="empty-state" style="padding:16px;text-align:left;"><p style="font-size:13px;">No links saved yet. Add them in the Edit tab.</p></div>`;
-    return;
-  }
+  if (!links.length) { box.innerHTML = `<div class="empty-state" style="padding:16px;text-align:left;"><p style="font-size:13px;">No links saved yet. Add them in the Edit tab.</p></div>`; return; }
   box.innerHTML = links.map(l => `
     <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg);border-radius:12px;margin-bottom:8px;">
       <div class="icon-bg blue-icon" style="width:36px;height:36px;border-radius:10px;flex-shrink:0;"><i data-lucide="${l.icon}" size="16"></i></div>
@@ -3344,515 +3150,576 @@ function renderExportLinks() {
     </div>`).join("");
   lucide.createIcons();
 }
- 
-window.exportProfessionalPDF = async function() {
+
+window.exportProfessionalPDF = async function () {
   const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+  const pdf = new jsPDF({ unit:"mm", format:"a4" });
   const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
-  const collectEntries = (type) => {
-    const container = document.getElementById(type + "-list");
-    if (!container) return [];
+  const collectEntries = type => {
+    const container = document.getElementById(type+"-list"); if (!container) return [];
     const entries = [];
     container.querySelectorAll(".dynamic-entry").forEach(entry => {
-      const obj = {};
-      entry.querySelectorAll("[data-field]").forEach(el => { obj[el.dataset.field] = el.value.trim(); });
-      entries.push(obj);
+      const obj = {}; entry.querySelectorAll("[data-field]").forEach(el => { obj[el.dataset.field] = el.value.trim(); }); entries.push(obj);
     });
     return entries;
   };
-  const name = studentData ? studentData.name.trim() : "Student";
-  const dept = studentData ? studentData.department : ""; const prn = studentData ? studentData.prn : "";
-  const summary = getVal("pf-summary"); const email = getVal("pf-email"); const phone = getVal("pf-phone");
-  const location = getVal("pf-location"); const linkedin = getVal("pf-linkedin"); const github = getVal("pf-github");
-  const website = getVal("pf-website"); const availability = getVal("pf-availability");
-  const schoolingList = collectEntries("schooling"); const educationList = collectEntries("education");
-  const certList = collectEntries("certifications"); const expList = collectEntries("experience"); const projList = collectEntries("projects");
-  const pageW = 210; const pageH = 297; const marginL = 18; const marginR = 18; const contentW = pageW - marginL - marginR;
+  const name = studentData?.name.trim()||"Student", dept = studentData?.department||"", prn = studentData?.prn||"";
+  const summary = getVal("pf-summary"), email = getVal("pf-email"), phone = getVal("pf-phone");
+  const location = getVal("pf-location"), availability = getVal("pf-availability");
+  const educationList = collectEntries("education"), expList = collectEntries("experience"), projList = collectEntries("projects"), certList = collectEntries("certifications");
+  const pW = 210, pH = 297, mL = 18, mR = 18, cW = pW-mL-mR;
   let y = 0;
-  const checkPage = (needed = 12) => { if (y + needed > pageH - 14) { pdf.addPage(); y = 18; } };
-  const sectionHeader = (title) => {
-    checkPage(16);
-    pdf.setFillColor(37, 99, 235); pdf.rect(marginL, y, contentW, 7, "F");
-    pdf.setFont(undefined, "bold"); pdf.setFontSize(9); pdf.setTextColor(255,255,255);
-    pdf.text(title.toUpperCase(), marginL + 3, y + 4.8);
-    pdf.setTextColor(0,0,0); y += 10;
-  };
-  pdf.setFillColor(13, 17, 23); pdf.rect(0, 0, pageW, 36, "F");
-  pdf.setTextColor(255,255,255); pdf.setFontSize(20); pdf.setFont(undefined, "bold");
-  pdf.text(name, marginL, 14);
-  pdf.setFontSize(9); pdf.setFont(undefined, "normal"); pdf.setTextColor(147,197,253);
-  pdf.text(`${dept} · PRN: ${prn}`, marginL, 21);
-  const contactParts = [email, phone, location, availability].filter(Boolean).join("  ·  ");
-  pdf.setTextColor(200,200,200); pdf.setFontSize(8);
-  pdf.text(contactParts, marginL, 28, { maxWidth: contentW });
-  y = 42; pdf.setTextColor(0,0,0);
-  if (summary) { sectionHeader("Profile Summary"); pdf.setFont(undefined,"normal"); pdf.setFontSize(9.5); pdf.setTextColor(30,41,59); const sl = pdf.splitTextToSize(summary, contentW); sl.forEach(l => { checkPage(6); pdf.text(l, marginL, y); y += 5; }); y += 4; }
-  if (educationList.length > 0) { sectionHeader("Education"); educationList.forEach(e => { checkPage(18); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${e.degree||""}${e.branch?" · "+e.branch:""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${e.institution||""}  ·  ${e.university||""}`, marginL, y+5); pdf.text(`${e.startYear||""} – ${e.endYear||""}  |  CGPA: ${e.cgpa||"N/A"}`, pageW-marginR, y+5, {align:"right"}); y += 12; }); y += 2; }
-  if (expList.length > 0) { sectionHeader("Experience"); expList.forEach(e => { checkPage(22); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${e.role||""}  ·  ${e.company||""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${e.type||""}  ·  ${e.location||""}`, marginL, y+5); pdf.text(`${e.startDate||""} – ${e.endDate||""}`, pageW-marginR, y+5, {align:"right"}); if (e.description) { pdf.setTextColor(30,41,59); const lines = pdf.splitTextToSize(e.description, contentW); y += 9; lines.forEach(l => { checkPage(5); pdf.text(l, marginL, y); y += 4.5; }); } else { y += 9; } y += 4; }); }
-  if (projList.length > 0) { sectionHeader("Projects"); projList.forEach(p => { checkPage(22); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${p.title||""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${p.tech||""}  ·  ${p.projectType||""}`, marginL, y+5); if (p.description) { pdf.setTextColor(30,41,59); const lines = pdf.splitTextToSize(p.description, contentW); y += 9; lines.forEach(l => { checkPage(5); pdf.text(l, marginL, y); y += 4.5; }); } else { y += 9; } y += 3; }); }
-  if (certList.length > 0) { sectionHeader("Certifications"); certList.forEach(c => { checkPage(14); pdf.setFont(undefined,"bold"); pdf.setFontSize(10); pdf.setTextColor(13,17,23); pdf.text(`${c.title||""}`, marginL, y); pdf.setFont(undefined,"normal"); pdf.setFontSize(9); pdf.setTextColor(100,116,139); pdf.text(`${c.issuer||""}  ·  ${c.issueDate||""}`, marginL, y+5); y += 12; }); y += 2; }
-  if (portfolioSkills.length > 0) { sectionHeader("Technical Skills"); const st = portfolioSkills.join("  ·  "); pdf.setFont(undefined,"normal"); pdf.setFontSize(9.5); pdf.setTextColor(30,41,59); const sl = pdf.splitTextToSize(st, contentW); sl.forEach(l => { checkPage(6); pdf.text(l, marginL, y); y += 5; }); y += 4; }
-  const pageCount = pdf.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) { pdf.setPage(i); pdf.setFontSize(7.5); pdf.setTextColor(150,150,150); pdf.text(`Generated via EduSmart 360 · ${new Date().toLocaleDateString("en-IN")} · Page ${i} of ${pageCount}`, pageW/2, pageH-8, {align:"center"}); }
-  pdf.save(`${name.replace(/\s+/g, "_")}_Portfolio.pdf`);
+  const chk  = (n=12) => { if (y+n > pH-14) { pdf.addPage(); y=18; } };
+  const secH = title => { chk(16); pdf.setFillColor(37,99,235); pdf.rect(mL,y,cW,7,"F"); pdf.setFont(undefined,"bold"); pdf.setFontSize(9); pdf.setTextColor(255,255,255); pdf.text(title.toUpperCase(),mL+3,y+4.8); pdf.setTextColor(0,0,0); y+=10; };
+  pdf.setFillColor(13,17,23); pdf.rect(0,0,pW,36,"F");
+  pdf.setTextColor(255,255,255); pdf.setFontSize(20); pdf.setFont(undefined,"bold"); pdf.text(name,mL,14);
+  pdf.setFontSize(9); pdf.setFont(undefined,"normal"); pdf.setTextColor(147,197,253); pdf.text(`${dept} · PRN: ${prn}`,mL,21);
+  pdf.setTextColor(200,200,200); pdf.setFontSize(8); pdf.text([email,phone,location,availability].filter(Boolean).join("  ·  "),mL,28,{maxWidth:cW});
+  y=42; pdf.setTextColor(0,0,0);
+  if (summary) { secH("Profile Summary"); pdf.setFont(undefined,"normal"); pdf.setFontSize(9.5); pdf.setTextColor(30,41,59); pdf.splitTextToSize(summary,cW).forEach(l=>{chk(6);pdf.text(l,mL,y);y+=5;}); y+=4; }
+  if (educationList.length) { secH("Education"); educationList.forEach(e=>{chk(18);pdf.setFont(undefined,"bold");pdf.setFontSize(10);pdf.setTextColor(13,17,23);pdf.text(`${e.degree||""}${e.branch?" · "+e.branch:""}`,mL,y);pdf.setFont(undefined,"normal");pdf.setFontSize(9);pdf.setTextColor(100,116,139);pdf.text(`${e.institution||""}  ·  ${e.university||""}`,mL,y+5);pdf.text(`${e.startYear||""} – ${e.endYear||""}  |  CGPA: ${e.cgpa||"N/A"}`,pW-mR,y+5,{align:"right"});y+=12;}); y+=2; }
+  if (expList.length) { secH("Experience"); expList.forEach(e=>{chk(22);pdf.setFont(undefined,"bold");pdf.setFontSize(10);pdf.setTextColor(13,17,23);pdf.text(`${e.role||""}  ·  ${e.company||""}`,mL,y);pdf.setFont(undefined,"normal");pdf.setFontSize(9);pdf.setTextColor(100,116,139);pdf.text(`${e.type||""}  ·  ${e.location||""}`,mL,y+5);pdf.text(`${e.startDate||""} – ${e.endDate||""}`,pW-mR,y+5,{align:"right"});if(e.description){pdf.setTextColor(30,41,59);const lines=pdf.splitTextToSize(e.description,cW);y+=9;lines.forEach(l=>{chk(5);pdf.text(l,mL,y);y+=4.5;});}else{y+=9;}y+=4;}); }
+  if (projList.length) { secH("Projects"); projList.forEach(p=>{chk(22);pdf.setFont(undefined,"bold");pdf.setFontSize(10);pdf.setTextColor(13,17,23);pdf.text(`${p.title||""}`,mL,y);pdf.setFont(undefined,"normal");pdf.setFontSize(9);pdf.setTextColor(100,116,139);pdf.text(`${p.tech||""}  ·  ${p.projectType||""}`,mL,y+5);if(p.description){pdf.setTextColor(30,41,59);const lines=pdf.splitTextToSize(p.description,cW);y+=9;lines.forEach(l=>{chk(5);pdf.text(l,mL,y);y+=4.5;});}else{y+=9;}y+=3;}); }
+  if (certList.length) { secH("Certifications"); certList.forEach(c=>{chk(14);pdf.setFont(undefined,"bold");pdf.setFontSize(10);pdf.setTextColor(13,17,23);pdf.text(`${c.title||""}`,mL,y);pdf.setFont(undefined,"normal");pdf.setFontSize(9);pdf.setTextColor(100,116,139);pdf.text(`${c.issuer||""}  ·  ${c.issueDate||""}`,mL,y+5);y+=12;}); y+=2; }
+  if (portfolioSkills.length) { secH("Technical Skills"); pdf.setFont(undefined,"normal");pdf.setFontSize(9.5);pdf.setTextColor(30,41,59);pdf.splitTextToSize(portfolioSkills.join("  ·  "),cW).forEach(l=>{chk(6);pdf.text(l,mL,y);y+=5;}); y+=4; }
+  for (let i=1;i<=pdf.internal.getNumberOfPages();i++){pdf.setPage(i);pdf.setFontSize(7.5);pdf.setTextColor(150,150,150);pdf.text(`Generated via EduSmart 360 · ${new Date().toLocaleDateString("en-IN")} · Page ${i} of ${pdf.internal.getNumberOfPages()}`,pW/2,pH-8,{align:"center"});}
+  pdf.save(`${name.replace(/\s+/g,"_")}_Portfolio.pdf`);
 };
- 
+
 // ================================================================
-// ========== EXISTING FUNCTIONS ==================================
+// EXAMS / RESULTS / GRIEVANCE / REEVAL / HALL TICKET / ASSIGNMENTS
 // ================================================================
- 
 async function loadAssignments() {
   const container = document.getElementById("assignmentList");
   if (!container || !studentData) return;
   try {
-    const q = query(collection(db, "assignments"), where("department", "==", studentData.department));
-    const snap = await getDocs(q);
-    if (snap.empty) {
-      container.innerHTML = `<div class="empty-state"><i data-lucide="package-open" size="40"></i><p>No assignments found.</p></div>`;
-      lucide.createIcons(); return;
-    }
-    const sorted = snap.docs.sort((a, b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0));
-    container.innerHTML = "";
-    sorted.forEach(docSnap => {
-      const task = docSnap.data();
-      const deadlineDate = task.deadline ? new Date(task.deadline) : null;
-      const isOverdue = deadlineDate && deadlineDate < new Date();
-      const formattedDeadline = deadlineDate ? deadlineDate.toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }) : "No Deadline";
-      container.innerHTML += `
-        <div style="border:1px solid ${isOverdue?'var(--red)':'var(--border)'}; border-left:5px solid ${isOverdue?'var(--red)':'var(--accent)'}; border-radius:16px; padding:20px; margin-bottom:12px; background:white;">
-          <div class="flex-between">
-            <div style="flex:1;min-width:0;">
-              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
-                <h4 style="margin:0;color:var(--primary);font-size:15px;">${task.title}</h4>
-                <span class="status-pill badge-blue" style="font-size:10px;">Sem ${task.semester||'—'}</span>
-              </div>
-              <p style="font-size:13px;color:var(--muted);margin:0 0 8px;"><b>Subject:</b> ${task.subject||'—'} | <b>Faculty:</b> ${task.facultyName||'—'}</p>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <i data-lucide="calendar" size="13" style="color:${isOverdue?'var(--red)':'var(--orange)'};"></i>
-                <small style="font-weight:700;color:${isOverdue?'var(--red)':'var(--orange)'};">Deadline: ${formattedDeadline}${isOverdue?' (Overdue)':''}</small>
-              </div>
-            </div>
-            <div style="margin-left:16px;flex-shrink:0;">
-              <a href="${task.link||'#'}" target="_blank" class="btn-primary" style="text-decoration:none;font-size:13px;padding:10px 18px;">Open Task</a>
-            </div>
-          </div>
-        </div>`;
+    const snap = await getDocs(query(collection(db,"assignments"), where("department","==",studentData.department)));
+    if (snap.empty) { container.innerHTML=`<div class="empty-state"><i data-lucide="package-open" size="40"></i><p>No assignments found.</p></div>`; lucide.createIcons(); return; }
+    const sorted = snap.docs.sort((a,b)=>(b.data().createdAt?.seconds||0)-(a.data().createdAt?.seconds||0));
+    container.innerHTML="";
+    sorted.forEach(d => {
+      const task=d.data(), dl=task.deadline?new Date(task.deadline):null, overdue=dl&&dl<new Date(), fmtDl=dl?dl.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"No Deadline";
+      container.innerHTML+=`<div style="border:1px solid ${overdue?'var(--red)':'var(--border)'};border-left:5px solid ${overdue?'var(--red)':'var(--accent)'};border-radius:16px;padding:20px;margin-bottom:12px;background:white;"><div class="flex-between"><div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;"><h4 style="margin:0;color:var(--primary);font-size:15px;">${task.title}</h4><span class="status-pill badge-blue" style="font-size:10px;">Sem ${task.semester||"—"}</span></div><p style="font-size:13px;color:var(--muted);margin:0 0 8px;"><b>Subject:</b> ${task.subject||"—"} | <b>Faculty:</b> ${task.facultyName||"—"}</p><div style="display:flex;align-items:center;gap:6px;"><i data-lucide="calendar" size="13" style="color:${overdue?'var(--red)':'var(--orange)'};"></i><small style="font-weight:700;color:${overdue?'var(--red)':'var(--orange)'};">Deadline: ${fmtDl}${overdue?' (Overdue)':''}</small></div></div><div style="margin-left:16px;flex-shrink:0;"><a href="${task.link||'#'}" target="_blank" class="btn-primary" style="text-decoration:none;font-size:13px;padding:10px 18px;">Open Task</a></div></div></div>`;
     });
     lucide.createIcons();
-  } catch (err) {
-    console.error("Assignment error:", err);
-    container.innerHTML = `<div class="empty-state"><p>Error loading assignments.</p></div>`;
-  }
+  } catch (err) { container.innerHTML=`<div class="empty-state"><p>Error loading assignments.</p></div>`; }
 }
- 
+
 async function loadExams(takenIds) {
-  const onlineContainer = document.getElementById("onlineExams");
-  const offlineTableBody = document.getElementById("offlineTableBody");
+  const oC = document.getElementById("onlineExams"), oT = document.getElementById("offlineTableBody");
   try {
-    const q = query(collection(db, "exams"), where("department", "==", studentData.department));
-    const examSnap = await getDocs(q);
-    const slotQ = query(collection(db, "exam_slots"), where("studentId", "==", auth.currentUser.uid));
-    const slotSnap = await getDocs(slotQ);
-    const mySeating = {};
-    slotSnap.forEach(s => mySeating[s.data().examId] = s.data());
+    const examSnap = await getDocs(query(collection(db,"exams"), where("department","==",studentData.department)));
+    const slotSnap = await getDocs(query(collection(db,"exam_slots"), where("studentId","==",auth.currentUser.uid)));
+    const mySeating = {}; slotSnap.forEach(s => mySeating[s.data().examId]=s.data());
     const available = examSnap.docs.filter(d => !takenIds.includes(d.id));
-    onlineContainer.innerHTML = ""; offlineTableBody.innerHTML = "";
-    let hasOffline = false;
-    if (available.length === 0) {
-      onlineContainer.innerHTML = `<div class="empty-state"><i data-lucide="check-circle" size="36"></i><p>All assessments completed!</p></div>`;
-      lucide.createIcons(); return;
-    }
-    available.forEach(docSnap => {
-      const exam = docSnap.data();
-      if (exam.type === 'mcq' || exam.type === 'online') {
-        onlineContainer.innerHTML += `
-          <div class="list-item">
-            <div class="item-info">
-              <div class="icon-bg blue-icon"><i data-lucide="monitor" size="18"></i></div>
-              <div><h4 style="margin:0 0 3px;">${exam.title}</h4><small style="color:var(--muted);">${exam.totalMarks} Marks · ${exam.date||'TBD'}</small></div>
-            </div>
-            <button class="btn-primary" onclick="takeExam('${docSnap.id}')">Start Test</button>
-          </div>`;
+    oC.innerHTML=""; oT.innerHTML=""; let hasOffline=false;
+    if (!available.length) { oC.innerHTML=`<div class="empty-state"><i data-lucide="check-circle" size="36"></i><p>All assessments completed!</p></div>`; lucide.createIcons(); return; }
+    available.forEach(d => {
+      const e=d.data();
+      if (e.type==="mcq"||e.type==="online") {
+        oC.innerHTML+=`<div class="list-item"><div class="item-info"><div class="icon-bg blue-icon"><i data-lucide="monitor" size="18"></i></div><div><h4 style="margin:0 0 3px;">${e.title}</h4><small style="color:var(--muted);">${e.totalMarks} Marks · ${e.date||"TBD"}</small></div></div><button class="btn-primary" onclick="takeExam('${d.id}')">Start Test</button></div>`;
       } else {
-        hasOffline = true;
-        const seat = mySeating[docSnap.id];
-        const seatingView = seat ? `<div class="bench-tag">${seat.classroom} · Bench #${seat.benchNumber}</div>` : `<span class="badge-pending">Pending</span>`;
-        offlineTableBody.innerHTML += `<tr><td><div class="icon-bg orange-icon" style="width:36px;height:36px;border-radius:10px;"><i data-lucide="calendar" size="16"></i></div></td><td><b>${exam.title}</b></td><td>${exam.date||'—'}</td><td>${exam.time||'—'}</td><td>${seatingView}</td></tr>`;
+        hasOffline=true;
+        const seat=mySeating[d.id];
+        const sv=seat?`<div class="bench-tag">${seat.classroom} · Bench #${seat.benchNumber}</div>`:`<span class="badge-pending">Pending</span>`;
+        oT.innerHTML+=`<tr><td><div class="icon-bg orange-icon" style="width:36px;height:36px;border-radius:10px;"><i data-lucide="calendar" size="16"></i></div></td><td><b>${e.title}</b></td><td>${e.date||"—"}</td><td>${e.time||"—"}</td><td>${sv}</td></tr>`;
       }
     });
-    document.getElementById("offlineCard").style.display = hasOffline ? "block" : "none";
-  } catch (err) {
-    console.error("Exam load error:", err);
-    onlineContainer.innerHTML = `<div class="empty-state"><p>Error loading exams.</p></div>`;
-  }
+    document.getElementById("offlineCard").style.display = hasOffline?"block":"none";
+  } catch (err) { oC.innerHTML=`<div class="empty-state"><p>Error loading exams.</p></div>`; }
   lucide.createIcons();
 }
- 
+
 async function loadPublishedResults() {
   const container = document.getElementById("resultsContainer");
   try {
-    const q = query(collection(db, "results_published"), where("studentId", "==", auth.currentUser.uid));
-    const snap = await getDocs(q);
-    if (snap.empty) {
-      container.innerHTML = `<div class="empty-state"><i data-lucide="inbox" size="36"></i><p>No official results published yet.</p></div>`;
-      lucide.createIcons(); return;
-    }
-    container.innerHTML = "";
-    snap.forEach(docSnap => {
-      const res = docSnap.data();
-      const breakdownHTML = res.breakdown && res.breakdown.length > 0
-        ? `<div style="margin-top:16px;"><small style="font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:1px;">Question-wise Breakdown</small><div style="margin-top:8px;">${res.breakdown.map((b,idx)=>`<div class="breakdown-pill"><div>Q${idx+1}: <span style="color:var(--accent);">${b.marks} Marks</span></div>${b.comment&&b.comment.trim()?`<div style="font-size:11px;color:var(--muted);margin-top:3px;">💬 ${b.comment}</div>`:''}</div>`).join('')}</div></div>` : '';
-      container.innerHTML += `
-        <div class="card result-card">
-          <div class="flex-between">
-            <div><h3 style="margin:0 0 4px;">${res.examTitle}</h3><small style="color:var(--muted);">Published: ${res.publishedAt?.toDate().toLocaleDateString()||'—'}</small></div>
-            <div style="text-align:center;"><div class="final-score-box"><div class="score-main">${res.obtainedMarks??0}</div></div><div style="font-size:12px;font-weight:700;margin-top:6px;color:var(--muted);">of ${res.maxMarks??0}</div></div>
-          </div>
-          ${breakdownHTML}
-          <div style="margin-top:16px;"><button class="btn-outline w-100" onclick="showSection('grievance')">Dispute This Result</button></div>
-        </div>`;
+    const snap = await getDocs(query(collection(db,"results_published"), where("studentId","==",auth.currentUser.uid)));
+    if (snap.empty) { container.innerHTML=`<div class="empty-state"><i data-lucide="inbox" size="36"></i><p>No official results published yet.</p></div>`; lucide.createIcons(); return; }
+    container.innerHTML="";
+    snap.forEach(d => {
+      const res=d.data();
+      const bHTML=res.breakdown?.length?`<div style="margin-top:16px;"><small style="font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:1px;">Question-wise Breakdown</small><div style="margin-top:8px;">${res.breakdown.map((b,idx)=>`<div class="breakdown-pill"><div>Q${idx+1}: <span style="color:var(--accent);">${b.marks} Marks</span></div>${b.comment?.trim()?`<div style="font-size:11px;color:var(--muted);margin-top:3px;">💬 ${b.comment}</div>`:""}</div>`).join("")}</div></div>`:"";
+      container.innerHTML+=`<div class="card result-card"><div class="flex-between"><div><h3 style="margin:0 0 4px;">${res.examTitle}</h3><small style="color:var(--muted);">Published: ${res.publishedAt?.toDate().toLocaleDateString()||"—"}</small></div><div style="text-align:center;"><div class="final-score-box"><div class="score-main">${res.obtainedMarks??0}</div></div><div style="font-size:12px;font-weight:700;margin-top:6px;color:var(--muted);">of ${res.maxMarks??0}</div></div></div>${bHTML}<div style="margin-top:16px;"><button class="btn-outline w-100" onclick="showSection('grievance')">Dispute This Result</button></div></div>`;
     });
-  } catch (err) {
-    console.error("Results error:", err);
-    container.innerHTML = `<div class="empty-state"><p>Error loading results.</p></div>`;
-  }
+  } catch (err) { container.innerHTML=`<div class="empty-state"><p>Error loading results.</p></div>`; }
 }
- 
+
 async function loadGrievanceOptions() {
   const select = document.getElementById("grievanceExamSelect");
   select.innerHTML = '<option value="">Select Exam</option>';
   const addedIds = new Set();
   try {
-    const respQ = query(collection(db, "responses"), where("studentId", "==", auth.currentUser.uid));
-    const respSnap = await getDocs(respQ);
+    const respSnap = await getDocs(query(collection(db,"responses"), where("studentId","==",auth.currentUser.uid)));
     for (const d of respSnap.docs) {
-      const res = d.data();
-      const examDoc = await getDoc(doc(db, "exams", res.examId));
-      if (!examDoc.exists()) continue;
-      const exam = examDoc.data();
-      const fmt = exam.date ? new Date(exam.date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "N/A";
-      select.innerHTML += `<option value="${res.examId}">${exam.title.toUpperCase()} · ${fmt} · Completed</option>`;
+      const res=d.data(), examDoc=await getDoc(doc(db,"exams",res.examId)); if (!examDoc.exists()) continue;
+      const exam=examDoc.data(), fmt=exam.date?new Date(exam.date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"N/A";
+      select.innerHTML+=`<option value="${res.examId}">${exam.title.toUpperCase()} · ${fmt} · Completed</option>`;
       addedIds.add(res.examId);
     }
-    const pubQ = query(collection(db, "results_published"), where("studentId", "==", auth.currentUser.uid));
-    const pubSnap = await getDocs(pubQ);
-    for (const docSnap of pubSnap.docs) {
-      const result = docSnap.data();
-      const fmt = result.publishedAt?.toDate().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) || "N/A";
-      if (addedIds.has(result.examId)) {
-        const existing = select.querySelector(`option[value="${result.examId}"]`);
-        if (existing) existing.textContent = `${result.examTitle.toUpperCase()} (${result.obtainedMarks}/${result.maxMarks}) · ${fmt} · Published`;
-      } else {
-        select.innerHTML += `<option value="${result.examId}">${result.examTitle.toUpperCase()} (${result.obtainedMarks}/${result.maxMarks}) · ${fmt} · Published</option>`;
-      }
+    const pubSnap = await getDocs(query(collection(db,"results_published"), where("studentId","==",auth.currentUser.uid)));
+    for (const d of pubSnap.docs) {
+      const r=d.data(), fmt=r.publishedAt?.toDate().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})||"N/A";
+      if (addedIds.has(r.examId)) { const ex=select.querySelector(`option[value="${r.examId}"]`); if(ex) ex.textContent=`${r.examTitle.toUpperCase()} (${r.obtainedMarks}/${r.maxMarks}) · ${fmt} · Published`; }
+      else select.innerHTML+=`<option value="${r.examId}">${r.examTitle.toUpperCase()} (${r.obtainedMarks}/${r.maxMarks}) · ${fmt} · Published</option>`;
     }
-    if (select.options.length === 1) select.innerHTML += `<option disabled>No exams available</option>`;
+    if (select.options.length===1) select.innerHTML+=`<option disabled>No exams available</option>`;
   } catch (err) { console.error("Grievance options error:", err); }
 }
- 
-window.submitGrievance = async function() {
-  const examId = document.getElementById("grievanceExamSelect").value;
-  const reason = document.getElementById("grievanceReason").value;
-  const details = document.getElementById("grievanceDetails").value.trim();
-  if (!examId) return alert("Please select an exam.");
-  if (!details) return alert("Please describe your concern.");
+
+window.submitGrievance = async function () {
+  const examId=document.getElementById("grievanceExamSelect").value, reason=document.getElementById("grievanceReason").value, details=document.getElementById("grievanceDetails").value.trim();
+  if (!examId) return alert("Please select an exam."); if (!details) return alert("Please describe your concern.");
   try {
-    await addDoc(collection(db, "grievances"), {
-      studentId: auth.currentUser.uid, studentName: studentData.name,
-      dept: studentData.department, examId, reason, details,
-      status: "Open", createdAt: serverTimestamp()
-    });
-    alert("Dispute ticket submitted successfully.");
-    document.getElementById("grievanceDetails").value = "";
-    loadExistingGrievances();
-  } catch (err) { alert("Failed to submit. Please try again."); }
+    await addDoc(collection(db,"grievances"),{studentId:auth.currentUser.uid,studentName:studentData.name,dept:studentData.department,examId,reason,details,status:"Open",createdAt:serverTimestamp()});
+    alert("Dispute ticket submitted successfully."); document.getElementById("grievanceDetails").value=""; loadExistingGrievances();
+  } catch { alert("Failed to submit."); }
 };
- 
+
 async function loadExistingGrievances() {
-  const container = document.getElementById("grievanceHistory");
-  container.innerHTML = "";
+  const container = document.getElementById("grievanceHistory"); container.innerHTML="";
   try {
-    const q = query(collection(db, "grievances"), where("studentId", "==", auth.currentUser.uid));
-    const snap = await getDocs(q);
-    if (snap.empty) {
-      container.innerHTML = `<div class="empty-state"><i data-lucide="inbox" size="32"></i><p>No grievances submitted yet.</p></div>`;
-      lucide.createIcons(); return;
-    }
+    const snap = await getDocs(query(collection(db,"grievances"), where("studentId","==",auth.currentUser.uid)));
+    if (snap.empty) { container.innerHTML=`<div class="empty-state"><i data-lucide="inbox" size="32"></i><p>No grievances submitted yet.</p></div>`; lucide.createIcons(); return; }
     const sorted = snap.docs.sort((a,b)=>(b.data().createdAt?.seconds||0)-(a.data().createdAt?.seconds||0));
-    for (const docSnap of sorted) {
-      const g = docSnap.data();
-      let commentHTML = "";
+    for (const d of sorted) {
+      const g=d.data(); let commentHTML="";
       try {
-        const commentQ = query(collection(db, "comments_grievances"), where("grievanceId", "==", docSnap.id));
-        const commentSnap = await getDocs(commentQ);
-        if (!commentSnap.empty) {
-          const cd = commentSnap.docs[0].data();
-          commentHTML = `<div style="margin-top:12px;padding:12px;background:var(--bg);border-radius:12px;"><small style="font-weight:700;">Response by ${cd.facultyName||"Faculty"}</small><p style="margin:5px 0 0;font-size:13px;">"${cd.comment}"</p></div>`;
-        }
+        const cSnap=await getDocs(query(collection(db,"comments_grievances"), where("grievanceId","==",d.id)));
+        if (!cSnap.empty) { const cd=cSnap.docs[0].data(); commentHTML=`<div style="margin-top:12px;padding:12px;background:var(--bg);border-radius:12px;"><small style="font-weight:700;">Response by ${cd.facultyName||"Faculty"}</small><p style="margin:5px 0 0;font-size:13px;">"${cd.comment}"</p></div>`; }
       } catch(_) {}
-      const isResolved = g.status === "Resolved";
-      container.innerHTML += `
-        <div class="grievance-card">
-          <div class="flex-between">
-            <div><b>${g.reason}</b><br><small style="color:var(--muted);">Exam ID: ${g.examId}</small></div>
-            <span class="status-pill" style="background:${isResolved?'#dcfce7':'#fef3c7'};color:${isResolved?'#166534':'#92400e'};">${g.status}</span>
-          </div>
-          <div style="margin-top:10px;"><small><b>Details:</b> ${g.details||"—"}</small></div>
-          <div style="margin-top:5px;"><small style="color:var(--muted);">Submitted: ${g.createdAt?.toDate().toLocaleString()||"N/A"}</small></div>
-          ${commentHTML}
-        </div>`;
+      const isResolved=g.status==="Resolved";
+      container.innerHTML+=`<div class="grievance-card"><div class="flex-between"><div><b>${g.reason}</b><br><small style="color:var(--muted);">Exam ID: ${g.examId}</small></div><span class="status-pill" style="background:${isResolved?'#dcfce7':'#fef3c7'};color:${isResolved?'#166534':'#92400e'};">${g.status}</span></div><div style="margin-top:10px;"><small><b>Details:</b> ${g.details||"—"}</small></div><div style="margin-top:5px;"><small style="color:var(--muted);">Submitted: ${g.createdAt?.toDate().toLocaleString()||"N/A"}</small></div>${commentHTML}</div>`;
     }
-  } catch (err) {
-    container.innerHTML = `<div class="empty-state"><p>Error loading grievances.</p></div>`;
-  }
+  } catch { container.innerHTML=`<div class="empty-state"><p>Error loading grievances.</p></div>`; }
   lucide.createIcons();
 }
- 
+
 async function loadReevaluationSubjects() {
-  const select = document.getElementById("reevalSubjectSelect");
-  select.innerHTML = '<option value="">Select Published Subject</option>';
+  const select = document.getElementById("reevalSubjectSelect"); select.innerHTML='<option value="">Select Published Subject</option>';
   try {
-    const q = query(collection(db, "results_published"), where("studentId", "==", auth.currentUser.uid));
-    const snap = await getDocs(q);
-    if (snap.empty) { select.innerHTML += `<option disabled>No published results available</option>`; return; }
-    snap.forEach(docSnap => {
-      const res = docSnap.data();
-      select.innerHTML += `<option value="${docSnap.id}">${res.examTitle.toUpperCase()} (${res.obtainedMarks}/${res.maxMarks})</option>`;
-    });
+    const snap = await getDocs(query(collection(db,"results_published"), where("studentId","==",auth.currentUser.uid)));
+    if (snap.empty) { select.innerHTML+=`<option disabled>No published results available</option>`; return; }
+    snap.forEach(d => { const r=d.data(); select.innerHTML+=`<option value="${d.id}">${r.examTitle.toUpperCase()} (${r.obtainedMarks}/${r.maxMarks})</option>`; });
   } catch (err) { console.error("Reeval subjects error:", err); }
 }
- 
-window.submitReevaluation = async function() {
-  const subjectId = document.getElementById("reevalSubjectSelect").value;
-  const reason = document.getElementById("reevalReason").value.trim();
-  if (!subjectId) return alert("Please select a subject.");
-  if (!reason) return alert("Please enter a reason.");
+
+window.submitReevaluation = async function () {
+  const subjectId=document.getElementById("reevalSubjectSelect").value, reason=document.getElementById("reevalReason").value.trim();
+  if (!subjectId) return alert("Please select a subject."); if (!reason) return alert("Please enter a reason.");
   try {
-    const resultDoc = await getDoc(doc(db, "results_published", subjectId));
-    if (!resultDoc.exists()) return alert("Invalid subject selected.");
-    const rd = resultDoc.data();
-    await addDoc(collection(db, "reevaluation_requests"), {
-      studentId: auth.currentUser.uid, studentName: studentData.name,
-      department: studentData.department, examId: rd.examId, examTitle: rd.examTitle,
-      obtainedMarks: rd.obtainedMarks, maxMarks: rd.maxMarks, reason,
-      status: "Pending", createdAt: serverTimestamp()
-    });
-    alert("Re-Evaluation request submitted successfully.");
-    document.getElementById("reevalReason").value = "";
-    loadReevaluationHistory();
-  } catch (err) { alert("Failed to submit. Please try again."); }
+    const rDoc=await getDoc(doc(db,"results_published",subjectId)); if (!rDoc.exists()) return alert("Invalid subject.");
+    const rd=rDoc.data();
+    await addDoc(collection(db,"reevaluation_requests"),{studentId:auth.currentUser.uid,studentName:studentData.name,department:studentData.department,examId:rd.examId,examTitle:rd.examTitle,obtainedMarks:rd.obtainedMarks,maxMarks:rd.maxMarks,reason,status:"Pending",createdAt:serverTimestamp()});
+    alert("Re-Evaluation request submitted successfully."); document.getElementById("reevalReason").value=""; loadReevaluationHistory();
+  } catch { alert("Failed to submit."); }
 };
- 
+
 async function loadReevaluationHistory() {
-  const container = document.getElementById("reevalHistory");
-  container.innerHTML = "";
+  const container = document.getElementById("reevalHistory"); container.innerHTML="";
   try {
-    const q = query(collection(db, "reevaluation_requests"), where("studentId", "==", auth.currentUser.uid));
-    const snap = await getDocs(q);
-    if (snap.empty) {
-      container.innerHTML = `<div class="empty-state"><i data-lucide="inbox" size="32"></i><p>No re-evaluation applications yet.</p></div>`;
-      lucide.createIcons(); return;
-    }
-    snap.forEach(docSnap => {
-      const data = docSnap.data();
-      const pdfBtn = data.answerSheetURL
-        ? `<a href="${data.answerSheetURL}" target="_blank" class="btn-outline" style="margin-top:12px;display:inline-flex;">View Answer Sheet</a>`
-        : `<small style="color:var(--muted);display:block;margin-top:10px;">Answer sheet not uploaded yet.</small>`;
-      container.innerHTML += `
-        <div class="grievance-card">
-          <div class="flex-between">
-            <div><b>${data.examTitle}</b><br><small style="color:var(--muted);">Marks: ${data.obtainedMarks}/${data.maxMarks}</small></div>
-            <span class="status-pill" style="background:#fef3c7;color:#92400e;">${data.status}</span>
-          </div>
-          <div style="margin-top:10px;"><small><b>Reason:</b> ${data.reason}</small></div>
-          ${pdfBtn}
-        </div>`;
-    });
-  } catch (err) {
-    container.innerHTML = `<div class="empty-state"><p>Error loading history.</p></div>`;
-  }
+    const snap = await getDocs(query(collection(db,"reevaluation_requests"), where("studentId","==",auth.currentUser.uid)));
+    if (snap.empty) { container.innerHTML=`<div class="empty-state"><i data-lucide="inbox" size="32"></i><p>No re-evaluation applications yet.</p></div>`; lucide.createIcons(); return; }
+    snap.forEach(d => { const data=d.data(); container.innerHTML+=`<div class="grievance-card"><div class="flex-between"><div><b>${data.examTitle}</b><br><small style="color:var(--muted);">Marks: ${data.obtainedMarks}/${data.maxMarks}</small></div><span class="status-pill" style="background:#fef3c7;color:#92400e;">${data.status}</span></div><div style="margin-top:10px;"><small><b>Reason:</b> ${data.reason}</small></div>${data.answerSheetURL?`<a href="${data.answerSheetURL}" target="_blank" class="btn-outline" style="margin-top:12px;display:inline-flex;">View Answer Sheet</a>`:`<small style="color:var(--muted);display:block;margin-top:10px;">Answer sheet not uploaded yet.</small>`}</div>`; });
+  } catch { container.innerHTML=`<div class="empty-state"><p>Error loading history.</p></div>`; }
 }
- 
+
 async function loadHallTicket() {
-  const container = document.getElementById("hallTicketContainer");
-  container.innerHTML = "";
+  const container = document.getElementById("hallTicketContainer"); container.innerHTML="";
   try {
-    const q = query(collection(db, "hall_tickets"), where("studentId","==",auth.currentUser.uid), where("status","==","active"));
-    const snap = await getDocs(q);
+    const snap = await getDocs(query(collection(db,"hall_tickets"), where("studentId","==",auth.currentUser.uid), where("status","==","active")));
     if (snap.empty) return;
-    const hall = snap.docs[0].data();
-    container.innerHTML = `
-      <div class="card" style="border-left:6px solid var(--accent); margin-bottom:20px;">
-        <div class="card-title"><i data-lucide="ticket" size="16"></i> Examination Hall Ticket</div>
-        <p><b>Exam Series:</b> ${hall.seriesName}</p>
-        <p style="margin-top:6px;"><b>Student:</b> ${hall.studentName} · PRN: ${hall.prn}</p>
-        <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
-        <table class="data-table">
-          <thead><tr><th>Subject</th><th>Date</th><th>Time</th></tr></thead>
-          <tbody>${hall.subjects.map(sub=>`<tr><td>${sub.title}</td><td>${sub.date}</td><td>${sub.time}</td></tr>`).join("")}</tbody>
-        </table>
-        <button id="downloadHallBtn" class="btn-primary w-100" style="margin-top:16px;">
-          <i data-lucide="download" size="15"></i> Download Hall Ticket (PDF)
-        </button>
-      </div>`;
-    document.getElementById("downloadHallBtn").addEventListener("click", downloadHallTicket);
+    const hall=snap.docs[0].data();
+    container.innerHTML=`<div class="card" style="border-left:6px solid var(--accent);margin-bottom:20px;"><div class="card-title"><i data-lucide="ticket" size="16"></i> Examination Hall Ticket</div><p><b>Exam Series:</b> ${hall.seriesName}</p><p style="margin-top:6px;"><b>Student:</b> ${hall.studentName} · PRN: ${hall.prn}</p><hr style="margin:16px 0;border:none;border-top:1px solid var(--border);"><table class="data-table"><thead><tr><th>Subject</th><th>Date</th><th>Time</th></tr></thead><tbody>${hall.subjects.map(s=>`<tr><td>${s.title}</td><td>${s.date}</td><td>${s.time}</td></tr>`).join("")}</tbody></table><button id="downloadHallBtn" class="btn-primary w-100" style="margin-top:16px;"><i data-lucide="download" size="15"></i> Download Hall Ticket (PDF)</button></div>`;
+    document.getElementById("downloadHallBtn").addEventListener("click", window.downloadHallTicket);
   } catch (err) { console.error("Hall ticket error:", err); }
   lucide.createIcons();
 }
- 
-window.downloadHallTicket = async function() {
+
+window.downloadHallTicket = async function () {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF();
   try {
-    const q = query(collection(db, "hall_tickets"), where("studentId","==",auth.currentUser.uid), where("status","==","active"));
-    const snap = await getDocs(q);
+    const snap=await getDocs(query(collection(db,"hall_tickets"), where("studentId","==",auth.currentUser.uid), where("status","==","active")));
     if (snap.empty) return alert("No active hall ticket found.");
-    const hall = snap.docs[0].data();
-    pdf.setFillColor(15,23,42); pdf.rect(0,0,210,30,"F");
-    pdf.setTextColor(255,255,255); pdf.setFontSize(16); pdf.setFont(undefined,"bold");
-    pdf.text("MIT Academy of Engineering, Alandi",105,14,null,null,"center");
-    pdf.setFontSize(10); pdf.setFont(undefined,"normal");
-    pdf.text("EXAMINATION HALL TICKET",105,22,null,null,"center");
-    pdf.setTextColor(0,0,0); pdf.setFillColor(239,246,255); pdf.rect(15,38,180,55,"F");
-    pdf.setFontSize(12); pdf.setFont(undefined,"bold"); pdf.setTextColor(37,99,235);
-    pdf.text("Student Information",20,48);
+    const hall=snap.docs[0].data();
+    pdf.setFillColor(15,23,42); pdf.rect(0,0,210,30,"F"); pdf.setTextColor(255,255,255); pdf.setFontSize(16); pdf.setFont(undefined,"bold");
+    pdf.text("MIT Academy of Engineering, Alandi",105,14,null,null,"center"); pdf.setFontSize(10); pdf.setFont(undefined,"normal");
+    pdf.text("EXAMINATION HALL TICKET",105,22,null,null,"center"); pdf.setTextColor(0,0,0); pdf.setFillColor(239,246,255); pdf.rect(15,38,180,55,"F");
+    pdf.setFontSize(12); pdf.setFont(undefined,"bold"); pdf.setTextColor(37,99,235); pdf.text("Student Information",20,48);
     pdf.setFont(undefined,"normal"); pdf.setTextColor(0,0,0);
     pdf.text(`Name: ${hall.studentName}`,20,58); pdf.text(`PRN: ${hall.prn}`,20,68);
     pdf.text(`Department: ${hall.department}`,20,78); pdf.text(`Batch: ${hall.batch}`,20,88);
-    pdf.setFillColor(37,99,235); pdf.rect(20,105,170,10,"F");
-    pdf.setTextColor(255,255,255); pdf.setFont(undefined,"bold");
+    pdf.setFillColor(37,99,235); pdf.rect(20,105,170,10,"F"); pdf.setTextColor(255,255,255); pdf.setFont(undefined,"bold");
     pdf.text("Subject",25,112); pdf.text("Date",115,112); pdf.text("Time",160,112);
     pdf.setTextColor(0,0,0); pdf.setFont(undefined,"normal");
-    let y = 125;
-    hall.subjects.forEach(sub => { pdf.text(sub.title,25,y); pdf.text(sub.date,115,y); pdf.text(sub.time,160,y); y += 10; });
-    const qrDiv = document.createElement("div");
-    new QRCode(qrDiv, { text:`PRN:${hall.prn}|Series:${hall.seriesName}`, width:80, height:80 });
-    const canvas = qrDiv.querySelector("canvas");
+    let y=125; hall.subjects.forEach(s=>{pdf.text(s.title,25,y);pdf.text(s.date,115,y);pdf.text(s.time,160,y);y+=10;});
+    const qrDiv=document.createElement("div");
+    new QRCode(qrDiv,{text:`PRN:${hall.prn}|Series:${hall.seriesName}`,width:80,height:80});
+    const canvas=qrDiv.querySelector("canvas");
     if (canvas) pdf.addImage(canvas.toDataURL("image/png"),"PNG",155,48,38,38);
     pdf.line(20,250,80,250); pdf.text("Controller of Examinations",20,258);
     pdf.line(130,250,190,250); pdf.text("Principal Signature",130,258);
     pdf.save(`${hall.seriesName}_Hall_Ticket.pdf`);
-  } catch (err) { alert("Could not generate PDF."); }
+  } catch { alert("Could not generate PDF."); }
 };
- 
-window.takeExam = async function(eid) {
-  const docSnap = await getDoc(doc(db, "exams", eid));
-  const exam = docSnap.data();
-  cheatWarnings = 0;
-  remainingSeconds = (exam.duration || 60) * 60;
-  const portal = document.getElementById("examPortal");
-  portal.innerHTML = `
-    <div class="p-head">
-      <h2 style="margin:0;font-size:18px;">${exam.title}</h2>
-      <div style="display:flex;gap:12px;align-items:center;">
-        <div id="timerBox" class="w-pill" style="background:#ef4444;">Time Left: ${formatTime(remainingSeconds)}</div>
-        <div id="w-count" class="w-pill">Warnings: 0/3</div>
-      </div>
-    </div>
-    <div class="p-body">
-      ${exam.questions.map((q,i) => `
-        <div class="card" style="margin-bottom:20px;">
-          <b>Q${i+1}.</b> ${q.text}<br>
-          ${q.type==='mcq'
-            ? q.options.map((o,idx)=>`<label class="opt-label"><input type="radio" name="q_${q.id}" value="${idx}"> ${o}</label>`).join('')
-            : `<textarea name="q_${q.id}" style="margin-top:10px;height:100px;"></textarea>`}
-        </div>`).join('')}
-      <button id="submitBtn" class="submit-btn" onclick="submitResponses('${eid}')">Submit Examination</button>
-    </div>`;
+
+window.takeExam = async function (eid) {
+  const d=await getDoc(doc(db,"exams",eid)); const exam=d.data();
+  cheatWarnings=0; remainingSeconds=(exam.duration||60)*60;
+  const portal=document.getElementById("examPortal");
+  portal.innerHTML=`<div class="p-head"><h2 style="margin:0;font-size:18px;">${exam.title}</h2><div style="display:flex;gap:12px;align-items:center;"><div id="timerBox" class="w-pill" style="background:#ef4444;">Time Left: ${formatTime(remainingSeconds)}</div><div id="w-count" class="w-pill">Warnings: 0/3</div></div></div><div class="p-body">${exam.questions.map((q,i)=>`<div class="card" style="margin-bottom:20px;"><b>Q${i+1}.</b> ${q.text}<br>${q.type==="mcq"?q.options.map((o,idx)=>`<label class="opt-label"><input type="radio" name="q_${q.id}" value="${idx}"> ${o}</label>`).join(""):`<textarea name="q_${q.id}" style="margin-top:10px;height:100px;"></textarea>`}</div>`).join("")}<button id="submitBtn" class="submit-btn" onclick="submitResponses('${eid}')">Submit Examination</button></div>`;
   portal.classList.add("portal-active");
-  document.onvisibilitychange = () => {
-    if (document.hidden) {
-      cheatWarnings++;
-      const wc = document.getElementById("w-count");
-      if (wc) wc.innerText = `Warnings: ${cheatWarnings}/3`;
-      if (cheatWarnings >= MAX_WARNINGS) submitResponses(eid, true);
-    }
-  };
+  document.onvisibilitychange=()=>{ if(document.hidden){cheatWarnings++;const wc=document.getElementById("w-count");if(wc)wc.innerText=`Warnings: ${cheatWarnings}/3`;if(cheatWarnings>=MAX_WARNINGS)window.submitResponses(eid,true);} };
   startTimer(eid);
 };
- 
-window.submitResponses = async function(eid, forced = false) {
+
+window.submitResponses = async function (eid, forced=false) {
   clearInterval(examTimerInterval);
-  const btn = document.getElementById("submitBtn");
-  if (btn) btn.disabled = true;
-  const examSnap = await getDoc(doc(db, "exams", eid));
-  const exam = examSnap.data();
-  let responses = {}; let score = 0;
-  exam.questions.forEach(q => {
-    const input = q.type==='mcq'
-      ? document.querySelector(`input[name="q_${q.id}"]:checked`)
-      : document.querySelector(`textarea[name="q_${q.id}"]`);
-    if (input) {
-      responses[q.id] = input.value;
-      if (q.type==='mcq' && input.value==q.correctAnswer) score += Number(q.marks);
-    }
+  const btn=document.getElementById("submitBtn"); if(btn) btn.disabled=true;
+  const examSnap=await getDoc(doc(db,"exams",eid)); const exam=examSnap.data();
+  let responses={}, score=0;
+  exam.questions.forEach(q=>{
+    const inp=q.type==="mcq"?document.querySelector(`input[name="q_${q.id}"]:checked`):document.querySelector(`textarea[name="q_${q.id}"]`);
+    if(inp){responses[q.id]=inp.value;if(q.type==="mcq"&&inp.value==q.correctAnswer)score+=Number(q.marks);}
   });
-  await setDoc(doc(db,"responses",`${eid}_${auth.currentUser.uid}`), {
-    examId:eid, studentId:auth.currentUser.uid, studentName:studentData.name,
-    responses, autoScore:score, isForced:forced, warnings:cheatWarnings,
-    durationAttempted:exam.duration||60, submittedAt:serverTimestamp()
-  });
-  const isPureMCQ = exam.type==="online" && exam.questions.every(q=>q.type==="mcq");
-  if (isPureMCQ) {
-    const breakdown = exam.questions.map(q=>({ questionId:q.id, marks:responses[q.id]==q.correctAnswer?Number(q.marks):0 }));
-    await setDoc(doc(db,"results_published",`${eid}_${auth.currentUser.uid}`), {
-      examId:eid, examTitle:exam.title, studentId:auth.currentUser.uid,
-      studentName:studentData.name, department:studentData.department,
-      obtainedMarks:score, maxMarks:exam.totalMarks, breakdown,
-      publishedAt:serverTimestamp(), autoPublished:true
-    });
+  await setDoc(doc(db,"responses",`${eid}_${auth.currentUser.uid}`),{examId:eid,studentId:auth.currentUser.uid,studentName:studentData.name,responses,autoScore:score,isForced:forced,warnings:cheatWarnings,durationAttempted:exam.duration||60,submittedAt:serverTimestamp()});
+  if(exam.type==="online"&&exam.questions.every(q=>q.type==="mcq")){
+    await setDoc(doc(db,"results_published",`${eid}_${auth.currentUser.uid}`),{examId:eid,examTitle:exam.title,studentId:auth.currentUser.uid,studentName:studentData.name,department:studentData.department,obtainedMarks:score,maxMarks:exam.totalMarks,breakdown:exam.questions.map(q=>({questionId:q.id,marks:responses[q.id]==q.correctAnswer?Number(q.marks):0})),publishedAt:serverTimestamp(),autoPublished:true});
   }
-  alert("Exam submitted successfully!");
-  location.reload();
+  alert("Exam submitted successfully!"); location.reload();
 };
- 
+
 function startTimer(eid) {
-  examTimerInterval = setInterval(() => {
-    remainingSeconds--;
-    const tb = document.getElementById("timerBox");
-    if (tb) tb.innerText = "Time Left: " + formatTime(remainingSeconds);
-    if (remainingSeconds <= 0) { clearInterval(examTimerInterval); alert("Time is up!"); submitResponses(eid, true); }
-  }, 1000);
+  examTimerInterval=setInterval(()=>{
+    remainingSeconds--; const tb=document.getElementById("timerBox");
+    if(tb) tb.innerText="Time Left: "+formatTime(remainingSeconds);
+    if(remainingSeconds<=0){clearInterval(examTimerInterval);alert("Time is up!");window.submitResponses(eid,true);}
+  },1000);
 }
- 
-function formatTime(s) {
-  const m = Math.floor(s/60), sec = s%60;
-  return `${m}:${sec<10?'0':''}${sec}`;
+function formatTime(s){const m=Math.floor(s/60),sec=s%60;return `${m}:${sec<10?"0":""}${sec}`;}
+
+window.logoutUser = () => signOut(auth).then(() => window.location.href="index.html");
+
+// ================================================================
+// LMS — fully inside the module, uses auth/db directly
+// ================================================================
+const DIFF_COLORS = {
+  Beginner:     { bg: "#d1fae5", color: "#065f46" },
+  Intermediate: { bg: "#fef3c7", color: "#92400e" },
+  Advanced:     { bg: "#fee2e2", color: "#991b1b" }
+};
+const TYPE_ICONS  = { video:"youtube", link:"link", article:"file-text", quiz:"help-circle", assignment:"clipboard-list" };
+const TYPE_COLORS = { video:"#dc2626", link:"#2563eb", article:"#7c3aed", quiz:"#d97706", assignment:"#059669" };
+
+function lmsSetEl(id, val) { const el=document.getElementById(id); if(el) el.innerText=val; }
+
+async function lmsLoadProgress() {
+  try {
+    const snap = await getDoc(doc(db, "lms_progress", auth.currentUser.uid));
+    if (snap.exists()) {
+      const data = snap.data();
+      lmsEnrolledIds = data.enrolledIds || [];
+      lmsProgressMap = {};
+      Object.entries(data.completedLessons || {}).forEach(([cid, lessons]) => {
+        lmsProgressMap[cid] = { completedLessons: new Set(lessons) };
+      });
+    }
+  } catch(e) { console.error("Progress load", e); }
 }
- 
-window.logoutUser = () => signOut(auth).then(() => window.location.href = "index.html");
+
+async function lmsLoadCourses() {
+  if (!studentData) return;
+  try {
+    const snap = await getDocs(query(collection(db,"lms_courses"),
+      where("department","==",studentData.department),
+      where("isPublished","==",true)));
+    lmsAllCourses = snap.docs.map(d => ({id:d.id,...d.data()}));
+    lmsAllCourses.sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    lmsRenderExplore();
+    lmsRenderMyCourses();
+    lmsRenderCertificates();
+    lmsUpdateMiniStats();
+  } catch(e) {
+    console.error("Course load", e);
+    const g = document.getElementById("lmsCourseGrid");
+    if(g) g.innerHTML=`<div class="lms-empty" style="grid-column:1/-1;"><div class="lms-empty-icon">⚠️</div><p>Failed to load courses. Please refresh.</p></div>`;
+  }
+}
+
+function lmsUpdateHeroStats() {
+  const enrolled  = lmsEnrolledIds.length;
+  const completed = lmsEnrolledIds.filter(id => lmsCourseProgress(id)===100).length;
+  const hours     = lmsAllCourses.filter(c=>lmsEnrolledIds.includes(c.id)).reduce((s,c)=>s+parseFloat(c.estimatedHours||0),0);
+  lmsSetEl("lmsStatEnrolled",  enrolled);
+  lmsSetEl("lmsStatCompleted", completed);
+  lmsSetEl("lmsStatHours",     hours>0 ? Math.round(hours)+"h" : "—");
+}
+
+function lmsUpdateMiniStats() {
+  const subjects     = new Set(lmsAllCourses.map(c=>c.subject)).size;
+  const totalLessons = lmsAllCourses.reduce((s,c)=>s+(c.totalLessons||0),0);
+  lmsSetEl("lmsExpTotal",     lmsAllCourses.length);
+  lmsSetEl("lmsExpPublished", lmsAllCourses.length);
+  lmsSetEl("lmsExpSubjects",  subjects);
+  lmsSetEl("lmsExpLessons",   totalLessons);
+}
+
+function lmsCourseProgress(courseId) {
+  const course = lmsAllCourses.find(c=>c.id===courseId); if(!course) return 0;
+  const total  = course.totalLessons||0; if(!total) return 0;
+  return Math.round(((lmsProgressMap[courseId]?.completedLessons?.size)||0)/total*100);
+}
+function lmsIsEnrolled(id) { return lmsEnrolledIds.includes(id); }
+
+function lmsRenderExplore() {
+  const grid   = document.getElementById("lmsCourseGrid"); if(!grid) return;
+  const search = (document.getElementById("lmsSearchInput")?.value||"").toLowerCase();
+  const filtered = lmsAllCourses.filter(c => {
+    const matchDiff   = !lmsDiffFilter || c.difficulty===lmsDiffFilter;
+    const matchSearch = !search || c.title.toLowerCase().includes(search) || (c.subject||"").toLowerCase().includes(search) || (c.description||"").toLowerCase().includes(search) || (c.tags||[]).some(t=>t.toLowerCase().includes(search));
+    return matchDiff && matchSearch;
+  });
+  if (!filtered.length) { grid.innerHTML=`<div class="lms-empty" style="grid-column:1/-1;"><div class="lms-empty-icon">🔍</div><h3 style="color:#1e293b;margin-bottom:8px;">No courses found</h3><p>Try adjusting your search or filters.</p></div>`; lucide.createIcons(); return; }
+  grid.className = `lms-course-grid${lmsViewMode==="list"?" list-view":""}`;
+  grid.innerHTML = filtered.map(lmsCourseCardHTML).join("");
+  lucide.createIcons();
+}
+
+function lmsCourseCardHTML(c) {
+  const enrolled  = lmsIsEnrolled(c.id);
+  const pct       = lmsCourseProgress(c.id);
+  const dc        = DIFF_COLORS[c.difficulty]||DIFF_COLORS.Beginner;
+  const tagHtml   = (c.tags||[]).slice(0,3).map(t=>`<span class="lms-tag">${t}</span>`).join("");
+  const thumbStyle = c.thumbnail ? `background-image:url('${c.thumbnail}');background-size:cover;background-position:center;` : `background:linear-gradient(135deg,#0d1117,#1e3a5f);`;
+  const initials  = (c.createdByName||"F").split(" ").map(n=>n[0]).join("").toUpperCase();
+  return `
+    <div class="lms-course-card" onclick="lmsOpenCourse('${c.id}')">
+      <div class="lms-course-thumb" style="${thumbStyle}">
+        <div class="lms-course-thumb-overlay">
+          <div class="lms-play-btn"><i data-lucide="play" size="16"></i></div>
+          <span class="lms-diff-tag" style="background:${dc.bg};color:${dc.color};">${c.difficulty}</span>
+        </div>
+        ${enrolled&&pct>0?`<div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:rgba(255,255,255,0.15);"><div style="height:100%;width:${pct}%;background:#4ade80;transition:width 0.8s;"></div></div>`:""}
+      </div>
+      <div class="lms-course-body">
+        <div class="lms-course-tags">${tagHtml}</div>
+        <div class="lms-course-title">${c.title}</div>
+        ${c.description?`<div class="lms-course-desc">${c.description.slice(0,90)}${c.description.length>90?"…":""}</div>`:""}
+        <div class="lms-course-meta-row">
+          <span><i data-lucide="book" size="11"></i>${c.subject}</span>
+          <span><i data-lucide="layout-list" size="11"></i>${c.totalWeeks||0} weeks</span>
+          <span><i data-lucide="play-circle" size="11"></i>${c.totalLessons||0} lessons</span>
+          <span><i data-lucide="clock" size="11"></i>${c.estimatedHours||"—"} hrs</span>
+        </div>
+        ${enrolled&&pct>0?`<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#64748b;margin-bottom:5px;"><span>Progress</span><span style="color:${pct===100?'#22c55e':'#2563eb'}">${pct}%</span></div><div class="lms-progress-wrap"><div class="lms-progress-bar" style="width:${pct}%;background:${pct===100?'#22c55e':'linear-gradient(90deg,#2563eb,#6366f1)'};"></div></div></div>`:""}
+        <div class="lms-course-footer">
+          <div class="lms-faculty-info">
+            <div class="lms-faculty-avatar">${initials}</div>
+            <div class="lms-faculty-name">${c.createdByName||"Faculty"}</div>
+          </div>
+          ${enrolled
+            ? `<button class="lms-enrolled-btn" onclick="event.stopPropagation();lmsOpenCourse('${c.id}')"><i data-lucide="${pct===100?'award':'play'}" size="12"></i>${pct===100?"Review":"Resume"}</button>`
+            : `<button class="lms-enroll-btn" onclick="event.stopPropagation();lmsEnroll('${c.id}')"><i data-lucide="plus" size="12"></i> Enroll</button>`}
+        </div>
+      </div>
+    </div>`;
+}
+
+function lmsRenderMyCourses() {
+  const container    = document.getElementById("lmsMyCoursesContainer"); if(!container) return;
+  const enrolled     = lmsAllCourses.filter(c=>lmsIsEnrolled(c.id));
+  const inProgress   = enrolled.filter(c=>{ const p=lmsCourseProgress(c.id); return p>0&&p<100; });
+  const contSec      = document.getElementById("lmsContinueSection");
+  const contRow      = document.getElementById("lmsContinueRow");
+  const contCount    = document.getElementById("lmsContinueCount");
+  if (inProgress.length>0) {
+    if(contSec) contSec.style.display="block";
+    if(contCount) contCount.innerText=inProgress.length;
+    if(contRow) contRow.innerHTML=inProgress.map(c=>{
+      const pct=lmsCourseProgress(c.id), done=lmsProgressMap[c.id]?.completedLessons?.size||0;
+      const ts=c.thumbnail?`background-image:url('${c.thumbnail}');background-size:cover;background-position:center;`:`background:linear-gradient(135deg,#0d1117,#1e3a5f);`;
+      return `<div class="lms-continue-card" onclick="lmsOpenCourse('${c.id}')"><div class="lms-continue-thumb" style="${ts}"><div class="lms-continue-thumb-overlay"><span style="color:white;font-size:11px;font-weight:700;background:rgba(0,0,0,0.4);padding:4px 10px;border-radius:8px;">${c.subject}</span></div></div><div class="lms-continue-body"><div class="lms-continue-subject">${c.subject} · Sem ${c.semester}</div><div class="lms-continue-title">${c.title}</div><div class="lms-progress-wrap"><div class="lms-progress-bar" style="width:${pct}%;"></div></div><div class="lms-progress-label"><span>${done} lessons done</span><span>${pct}%</span></div><button class="lms-resume-btn"><i data-lucide="play" size="13"></i> Continue Learning</button></div></div>`;
+    }).join("");
+  } else { if(contSec) contSec.style.display="none"; }
+  if (!enrolled.length) {
+    container.innerHTML=`<div class="lms-empty"><div class="lms-empty-icon">📚</div><h3 style="color:#1e293b;margin-bottom:8px;">No courses yet</h3><p>Go to <b>Explore Courses</b> to enroll.</p><button onclick="lmsSwitchTab('explore',document.getElementById('lmstab-explore'))" style="margin-top:16px;background:#2563eb;color:white;border:none;padding:12px 24px;border-radius:12px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;">Explore Courses →</button></div>`;
+    lucide.createIcons(); return;
+  }
+  container.innerHTML=`<div class="lms-course-grid">${enrolled.map(lmsCourseCardHTML).join("")}</div>`;
+  lucide.createIcons();
+}
+
+function lmsRenderCertificates() {
+  const container = document.getElementById("lmsCertContainer"); if(!container) return;
+  const completed = lmsAllCourses.filter(c=>lmsIsEnrolled(c.id)&&lmsCourseProgress(c.id)===100);
+  if (!completed.length) { container.innerHTML=`<div class="lms-empty"><div class="lms-empty-icon">🎓</div><h3 style="color:#1e293b;margin-bottom:8px;">No certificates yet</h3><p>Complete a course to earn your first certificate!</p></div>`; lucide.createIcons(); return; }
+  container.innerHTML=`<div class="lms-cert-grid">${completed.map(c=>`<div class="lms-cert-card"><div class="lms-cert-title">${c.title}</div><div class="lms-cert-date">${c.subject} · Sem ${c.semester}</div><button class="lms-cert-btn" onclick="lmsDownloadCert('${c.id}')"><i data-lucide="download" size="12"></i> Download Certificate</button></div>`).join("")}</div>`;
+  lucide.createIcons();
+}
+
+window.lmsEnroll = async function (courseId) {
+  if (!auth.currentUser) return;
+  if (lmsEnrolledIds.includes(courseId)) { window.lmsOpenCourse(courseId); return; }
+  lmsEnrolledIds.push(courseId);
+  if (!lmsProgressMap[courseId]) lmsProgressMap[courseId]={ completedLessons: new Set() };
+  await lmsSaveProgress();
+  lmsUpdateHeroStats();
+  lmsRenderExplore();
+  window.lmsOpenCourse(courseId);
+};
+
+window.lmsOpenCourse = async function (courseId) {
+  const course = lmsAllCourses.find(c=>c.id===courseId); if(!course) return;
+  if (!lmsIsEnrolled(courseId)) { await window.lmsEnroll(courseId); return; }
+  lmsCurrentCourse = course;
+  if (!lmsProgressMap[courseId]) lmsProgressMap[courseId]={ completedLessons: new Set() };
+  let targetWi=0, targetLi=0;
+  outer: for (let wi=0;wi<(course.weeks||[]).length;wi++) {
+    for (let li=0;li<(course.weeks[wi].lessons||[]).length;li++) {
+      if (!lmsProgressMap[courseId].completedLessons.has(`${wi}_${li}`)) { targetWi=wi; targetLi=li; break outer; }
+    }
+  }
+  lmsCurrentLesson={ wi:targetWi, li:targetLi };
+  const overlay=document.getElementById("lmsCoursePlayer"); overlay.classList.add("open");
+  document.body.style.overflow="hidden";
+  document.getElementById("lmsPlayerCourseTitle").innerText=course.title;
+  lmsRenderPlayerSidebar();
+  lmsRenderPlayerLesson();
+  lucide.createIcons();
+};
+
+window.lmsClosePlayer = function () {
+  document.getElementById("lmsCoursePlayer").classList.remove("open");
+  document.body.style.overflow="";
+  lmsRenderMyCourses(); lmsRenderExplore(); lmsRenderCertificates(); lmsUpdateHeroStats();
+};
+
+function lmsRenderPlayerSidebar() {
+  const sidebar=document.getElementById("lmsPlayerSidebar"); if(!sidebar) return;
+  const course=lmsCurrentCourse, {wi:curWi,li:curLi}=lmsCurrentLesson, progress=lmsProgressMap[course.id];
+  let html="";
+  (course.weeks||[]).forEach((week,wi)=>{
+    const wLessons=week.lessons||[], weekDone=wLessons.filter((_,li)=>progress.completedLessons.has(`${wi}_${li}`)).length;
+    html+=`<div class="lms-player-week-header"><div class="lms-player-week-title">${week.title}</div><span style="font-size:10px;color:rgba(255,255,255,0.35);font-weight:700;">${weekDone}/${wLessons.length}</span></div>`;
+    wLessons.forEach((lesson,li)=>{
+      const isDone=progress.completedLessons.has(`${wi}_${li}`), isActive=wi===curWi&&li===curLi;
+      const tc=TYPE_COLORS[lesson.type]||"#64748b";
+      html+=`<div class="lms-player-lesson ${isActive?"active":""} ${isDone&&!isActive?"completed":""}" onclick="lmsNavigateLesson(${wi},${li})"><div class="lms-lesson-icon" style="background:${tc}18;color:${tc};"><i data-lucide="${TYPE_ICONS[lesson.type]||'link'}" size="14"></i></div><div class="lms-player-lesson-info"><div class="lms-player-lesson-title">${lesson.title}</div><div class="lms-player-lesson-meta">${lesson.type.charAt(0).toUpperCase()+lesson.type.slice(1)}${lesson.duration?" · "+lesson.duration:""}</div></div>${isDone?`<div class="lms-done-check"><i data-lucide="check" size="10" style="color:white;"></i></div>`:""}</div>`;
+    });
+  });
+  sidebar.innerHTML=html;
+  const total=lmsCurrentCourse.totalLessons||0, done=progress.completedLessons.size;
+  const pp=document.getElementById("lmsPlayerProgressPill"); if(pp) pp.innerText=`${done} / ${total} lessons`;
+  lucide.createIcons();
+}
+
+function lmsRenderPlayerLesson() {
+  const course=lmsCurrentCourse, {wi,li}=lmsCurrentLesson;
+  const week=course.weeks?.[wi], lesson=week?.lessons?.[li]; if(!lesson) return;
+  const main=document.getElementById("lmsPlayerMain"); if(!main) return;
+  const tc=TYPE_COLORS[lesson.type]||"#64748b", progress=lmsProgressMap[course.id], isDone=progress.completedLessons.has(`${wi}_${li}`);
+  const allLessons=[];
+  (course.weeks||[]).forEach((w,wI)=>(w.lessons||[]).forEach((_,lI)=>allLessons.push({wi:wI,li:lI})));
+  const curIdx=allLessons.findIndex(x=>x.wi===wi&&x.li===li), hasPrev=curIdx>0, hasNext=curIdx<allLessons.length-1;
+  const contentHTML = lesson.type==="video"
+    ? `<div class="lms-video-area">${lesson.url?`<iframe src="${lesson.url}" allowfullscreen allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" loading="lazy"></iframe>`:`<div class="lms-video-placeholder"><div class="lms-video-placeholder-icon"><i data-lucide="video-off" size="28" style="opacity:0.5;"></i></div><p style="font-size:13px;">Video not available</p></div>`}</div>`
+    : `<div class="lms-resource-area"><a href="${lesson.url}" target="_blank" class="lms-resource-card"><div class="lms-resource-icon-box" style="background:${tc}15;color:${tc};"><i data-lucide="${TYPE_ICONS[lesson.type]||'link'}" size="22"></i></div><div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:15px;color:white;margin-bottom:4px;">Open ${lesson.type.charAt(0).toUpperCase()+lesson.type.slice(1)}</div><div style="font-size:12px;color:rgba(255,255,255,0.4);word-break:break-all;">${lesson.url}</div></div><i data-lucide="external-link" size="16" style="color:rgba(255,255,255,0.3);flex-shrink:0;"></i></a></div>`;
+  main.innerHTML=`${contentHTML}<div class="lms-lesson-detail-area"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:4px 12px;border-radius:100px;background:${tc}20;color:${tc};text-transform:uppercase;"><i data-lucide="${TYPE_ICONS[lesson.type]||'link'}" size="11"></i> ${lesson.type}</span>${isDone?`<span style="display:inline-flex;align-items:center;gap:5px;background:#d1fae520;color:#4ade80;font-size:11px;font-weight:800;padding:4px 12px;border-radius:100px;"><i data-lucide="check-circle" size="11"></i> Completed</span>`:""}</div><h2 class="lms-lesson-detail-title">${lesson.title}</h2><div class="lms-lesson-detail-meta"><span><i data-lucide="layers" size="12"></i> Week ${wi+1}: ${week.title}</span>${lesson.duration?`<span><i data-lucide="clock" size="12"></i>${lesson.duration}</span>`:""}<span><i data-lucide="list" size="12"></i>Lesson ${li+1} of ${week.lessons.length}</span></div>${lesson.description?`<div class="lms-lesson-desc">${lesson.description}</div>`:""}<div class="lms-lesson-nav">${hasPrev?`<button class="lms-prev-btn" onclick="lmsNavigateLesson(${allLessons[curIdx-1].wi},${allLessons[curIdx-1].li})"><i data-lucide="arrow-left" size="14"></i> Previous</button>`:""}${!isDone?`<button class="lms-next-btn" onclick="lmsMarkAndNext(${hasNext},${hasNext?allLessons[curIdx+1].wi:-1},${hasNext?allLessons[curIdx+1].li:-1})"><i data-lucide="check" size="14"></i> Mark Done${hasNext?" & Next":""}</button>`:hasNext?`<button class="lms-next-btn" onclick="lmsNavigateLesson(${allLessons[curIdx+1].wi},${allLessons[curIdx+1].li})">Next Lesson <i data-lucide="arrow-right" size="14"></i></button>`:`<div style="color:#4ade80;font-weight:800;font-size:14px;display:flex;align-items:center;gap:8px;padding:12px;">🎉 You've completed this course!</div>`}</div></div>`;
+  const cb=document.getElementById("lmsMarkCompleteBtn");
+  if(cb){cb.innerHTML=isDone?`<i data-lucide="check-circle" size="14"></i> Completed`:`<i data-lucide="check" size="14"></i> Mark Complete`;cb.style.background=isDone?"#059669":"#22c55e";}
+  lucide.createIcons();
+}
+
+window.lmsNavigateLesson = function (wi, li) {
+  lmsCurrentLesson={wi,li}; lmsRenderPlayerSidebar(); lmsRenderPlayerLesson();
+  document.getElementById("lmsPlayerMain")?.scrollTo({top:0,behavior:"smooth"});
+};
+
+window.lmsMarkLessonComplete = async function () {
+  const {wi,li}=lmsCurrentLesson, key=`${wi}_${li}`, progress=lmsProgressMap[lmsCurrentCourse.id];
+  if (progress.completedLessons.has(key)) return;
+  progress.completedLessons.add(key);
+  await lmsSaveProgress();
+  lmsRenderPlayerSidebar(); lmsRenderPlayerLesson();
+  if (progress.completedLessons.size >= (lmsCurrentCourse.totalLessons||0)) {
+    setTimeout(()=>{ if(confirm(`🎉 Congratulations! You've completed "${lmsCurrentCourse.title}"!\n\nA certificate has been earned.`)){window.lmsClosePlayer();setTimeout(()=>window.lmsSwitchTab("certificates",document.getElementById("lmstab-certificates")),300);} },400);
+  }
+};
+
+window.lmsMarkAndNext = async function (hasNext, nextWi, nextLi) {
+  await window.lmsMarkLessonComplete();
+  if (hasNext && nextWi>=0) setTimeout(()=>window.lmsNavigateLesson(nextWi,nextLi),300);
+};
+
+async function lmsSaveProgress() {
+  if (!auth.currentUser) return;
+  try {
+    const completedData={};
+    Object.entries(lmsProgressMap).forEach(([cid,data])=>{ completedData[cid]=[...data.completedLessons]; });
+    await setDoc(doc(db,"lms_progress",auth.currentUser.uid),{enrolledIds:lmsEnrolledIds,completedLessons:completedData,updatedAt:serverTimestamp()});
+  } catch(e) { console.error("Save progress error:", e); }
+}
+
+window.lmsDownloadCert = function (courseId) {
+  const course=lmsAllCourses.find(c=>c.id===courseId); if(!course) return;
+  const name=studentData?.name||"Student", dept=studentData?.department||"", prn=studentData?.prn||"";
+  const dateStr=new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"});
+  const w=window.open("","_blank");
+  w.document.write(`<!DOCTYPE html><html><head><title>Certificate</title><link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet"><style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;font-family:'DM Sans',sans-serif;}.cert{width:850px;min-height:580px;background:white;border-radius:28px;padding:60px 80px;text-align:center;border:2px solid #e2e8f0;position:relative;overflow:hidden;}.cert::before{content:'';position:absolute;inset:16px;border:2px solid #dbeafe;border-radius:18px;pointer-events:none;}.cert-top{color:#2563eb;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:3px;margin-bottom:20px;}.cert-logo{font-family:'Syne',sans-serif;font-size:22px;font-weight:900;color:#0d1117;margin-bottom:8px;}.cert-logo span{color:#2563eb;}.cert-divider{width:80px;height:3px;background:linear-gradient(90deg,#2563eb,#6366f1);border-radius:2px;margin:20px auto;}.cert-body{font-size:14px;color:#64748b;margin-bottom:16px;}.cert-name{font-family:'Syne',sans-serif;font-size:42px;font-weight:900;color:#0d1117;margin:8px 0;line-height:1;}.cert-course{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#2563eb;margin:20px 0 8px;}.cert-meta{color:#94a3b8;font-size:13px;margin-bottom:30px;}.cert-footer{display:flex;justify-content:space-between;align-items:flex-end;margin-top:40px;padding-top:24px;border-top:1px solid #f1f5f9;}.cert-sig{text-align:center;}.cert-sig-line{width:120px;height:1px;background:#cbd5e1;margin:8px auto 4px;}.cert-sig-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;}.cert-seal{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#6366f1);display:flex;align-items:center;justify-content:center;color:white;font-size:24px;font-weight:900;font-family:'Syne',sans-serif;}@media print{body{background:white;padding:0;}.cert{box-shadow:none;border-radius:0;}}</style></head><body><div class="cert"><div class="cert-top">Certificate of Completion</div><div class="cert-logo">EduSmart <span>360</span></div><div class="cert-divider"></div><div class="cert-body">This is to certify that</div><div class="cert-name">${name}</div><div class="cert-body" style="margin-top:6px;">${dept} · PRN: ${prn}</div><div class="cert-body" style="margin-top:4px;">has successfully completed the course</div><div class="cert-course">${course.title}</div><div class="cert-meta">${course.subject} · Semester ${course.semester} · ${course.difficulty} Level · ${course.totalLessons} Lessons</div><div class="cert-footer"><div class="cert-sig"><div style="font-size:18px;font-family:'Syne',sans-serif;font-weight:800;color:#0d1117;margin-bottom:4px;">${course.createdByName||"Faculty"}</div><div class="cert-sig-line"></div><div class="cert-sig-label">Course Instructor</div></div><div class="cert-seal">ES</div><div class="cert-sig"><div style="font-size:13px;font-weight:700;color:#0d1117;margin-bottom:4px;">${dateStr}</div><div class="cert-sig-line"></div><div class="cert-sig-label">Date of Completion</div></div></div></div><script>setTimeout(()=>window.print(),800);<\/script></body></html>`);
+  w.document.close();
+};
+
+window.lmsSwitchTab = function (tab, el) {
+  document.querySelectorAll(".lms-inner-tab").forEach(t=>t.classList.remove("active"));
+  document.querySelectorAll(".lms-tab-pane").forEach(p=>p.style.display="none");
+  const pane=document.getElementById("lmspane-"+tab); if(pane) pane.style.display="block";
+  if(el) el.classList.add("active");
+  if(tab==="mycourses") lmsRenderMyCourses();
+  if(tab==="certificates") lmsRenderCertificates();
+  lucide.createIcons();
+};
+
+window.lmsFilterCourses = () => lmsRenderExplore();
+window.lmsSetDiffFilter = function (el, diff) {
+  lmsDiffFilter=diff;
+  document.querySelectorAll("#lmsDiffFilters .lms-filter-chip").forEach(c=>c.classList.remove("active"));
+  el.classList.add("active"); lmsRenderExplore();
+};
+window.lmsSetView = function (mode) {
+  lmsViewMode=mode;
+  document.getElementById("lmsViewGrid")?.classList.toggle("active",mode==="grid");
+  document.getElementById("lmsViewList")?.classList.toggle("active",mode==="list");
+  lmsRenderExplore();
+};
+
 </script>
- 
-<!-- ====== ATTENDANCE CHARTS ====== -->
+
+<!-- ====== ATTENDANCE CHARTS (non-module, no Firebase needed) ====== -->
 <script>
 const attendanceData = [
-  { name: "Data Structures", code: "CS301", present: 38, total: 42 },
-  { name: "Operating Systems", code: "CS302", present: 35, total: 42 },
+  { name: "Data Structures",     code: "CS301", present: 38, total: 42 },
+  { name: "Operating Systems",   code: "CS302", present: 35, total: 42 },
   { name: "Database Management", code: "CS303", present: 40, total: 42 },
-  { name: "Computer Networks", code: "CS304", present: 30, total: 42 },
-  { name: "Software Engineering", code: "CS305", present: 20, total: 42 },
-  { name: "Theory of Computation", code: "CS306", present: 37, total: 42 }
+  { name: "Computer Networks",   code: "CS304", present: 30, total: 42 },
+  { name: "Software Engineering",code: "CS305", present: 20, total: 42 },
+  { name: "Theory of Computation",code:"CS306", present: 37, total: 42 }
 ];
- 
+
 function getColor(pct) {
   if (pct >= 85) return "#22c55e";
   if (pct >= 75) return "#f59e0b";
   return "#ef4444";
 }
- 
+
 function renderAttendanceTable() {
-  const container = document.getElementById("attSubjectList");
-  if (!container) return;
+  const container = document.getElementById("attSubjectList"); if (!container) return;
   container.innerHTML = "";
   attendanceData.forEach(sub => {
     const pct = Math.round((sub.present / sub.total) * 100);
     const color = getColor(pct);
     container.innerHTML += `
       <div class="att-subject-row">
-        <div>
-          <div class="att-subject-name">${sub.name}</div>
-          <div class="att-subject-code">${sub.code}</div>
-        </div>
+        <div><div class="att-subject-name">${sub.name}</div><div class="att-subject-code">${sub.code}</div></div>
         <div style="text-align:center;font-weight:700;color:var(--green);">${sub.present}</div>
         <div style="text-align:center;font-weight:700;color:var(--red);">${sub.total - sub.present}</div>
         <div style="text-align:center;font-weight:700;">${sub.total}</div>
@@ -3863,713 +3730,55 @@ function renderAttendanceTable() {
       </div>`;
   });
 }
- 
+
 function renderCharts() {
   const barCtx = document.getElementById("subjectBarChart");
   if (barCtx) {
     new Chart(barCtx, {
-      type: 'bar',
+      type: "bar",
       data: {
         labels: attendanceData.map(s => s.code),
-        datasets: [{
-          label: 'Attendance %',
-          data: attendanceData.map(s => Math.round((s.present / s.total) * 100)),
-          backgroundColor: attendanceData.map(s => getColor(Math.round((s.present / s.total) * 100)) + "cc"),
-          borderColor: attendanceData.map(s => getColor(Math.round((s.present / s.total) * 100))),
-          borderWidth: 2, borderRadius: 8
-        }]
+        datasets: [{ label: "Attendance %", data: attendanceData.map(s => Math.round((s.present/s.total)*100)), backgroundColor: attendanceData.map(s => getColor(Math.round((s.present/s.total)*100))+"cc"), borderColor: attendanceData.map(s => getColor(Math.round((s.present/s.total)*100))), borderWidth: 2, borderRadius: 8 }]
       },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { min:0, max:100, ticks: { callback: v => v+'%' }, grid: { color:'#f1f5f9' } },
-          x: { grid: { display: false } }
-        }
-      }
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min:0, max:100, ticks: { callback: v => v+"%" }, grid: { color:"#f1f5f9" } }, x: { grid: { display:false } } } }
     });
   }
   const lineCtx = document.getElementById("monthlyLineChart");
   if (lineCtx) {
     new Chart(lineCtx, {
-      type: 'line',
-      data: {
-        labels: ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"],
-        datasets: [{
-          label: 'Monthly %',
-          data: [92,88,91,85,79,83,87,84,87],
-          borderColor: '#2563eb',
-          backgroundColor: 'rgba(37,99,235,0.08)',
-          borderWidth: 2.5, fill: true, tension: 0.4,
-          pointBackgroundColor: '#2563eb', pointRadius: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { min:60, max:100, ticks: { callback: v => v+'%' }, grid: { color:'#f1f5f9' } },
-          x: { grid: { display: false } }
-        }
-      }
+      type: "line",
+      data: { labels: ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"], datasets: [{ label: "Monthly %", data: [92,88,91,85,79,83,87,84,87], borderColor: "#2563eb", backgroundColor: "rgba(37,99,235,0.08)", borderWidth: 2.5, fill: true, tension: 0.4, pointBackgroundColor: "#2563eb", pointRadius: 4 }] },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min:60, max:100, ticks: { callback: v => v+"%" }, grid: { color:"#f1f5f9" } }, x: { grid: { display:false } } } }
     });
   }
 }
- 
-window.downloadAttendanceReport = function() {
+
+window.downloadAttendanceReport = function () {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF();
-  pdf.setFillColor(15,23,42); pdf.rect(0,0,210,28,"F");
-  pdf.setTextColor(255,255,255); pdf.setFontSize(16); pdf.setFont(undefined,"bold");
-  pdf.text("EduSmart 360 – Attendance Report",105,13,null,null,"center");
-  pdf.setFontSize(10); pdf.setFont(undefined,"normal");
+  pdf.setFillColor(15,23,42); pdf.rect(0,0,210,28,"F"); pdf.setTextColor(255,255,255); pdf.setFontSize(16); pdf.setFont(undefined,"bold");
+  pdf.text("EduSmart 360 – Attendance Report",105,13,null,null,"center"); pdf.setFontSize(10); pdf.setFont(undefined,"normal");
   pdf.text("Generated: "+new Date().toLocaleDateString("en-IN"),105,22,null,null,"center");
-  pdf.setTextColor(0,0,0); pdf.setFontSize(13); pdf.setFont(undefined,"bold");
-  pdf.text("Attendance Summary",15,42);
-  pdf.setFont(undefined,"normal"); pdf.setFontSize(11);
-  pdf.text("Overall: 87%  |  Attended: 174  |  Missed: 26  |  Total: 200",15,52);
-  pdf.setFillColor(37,99,235); pdf.rect(15,62,180,10,"F");
-  pdf.setTextColor(255,255,255); pdf.setFont(undefined,"bold"); pdf.setFontSize(10);
-  pdf.text("Subject",18,69); pdf.text("Code",90,69); pdf.text("Present",115,69);
-  pdf.text("Absent",140,69); pdf.text("Total",160,69); pdf.text("Attendance%",175,69);
-  pdf.setFont(undefined,"normal"); let y = 80;
-  attendanceData.forEach((sub,i) => {
-    if (i%2===0) { pdf.setFillColor(245,248,255); pdf.rect(15,y-5,180,10,"F"); }
-    pdf.setTextColor(0,0,0);
-    const pct = Math.round((sub.present/sub.total)*100);
-    const [r,g,b] = pct>=85?[22,163,74]:pct>=75?[180,83,9]:[185,28,28];
-    pdf.text(sub.name,18,y); pdf.text(sub.code,90,y);
-    pdf.text(String(sub.present),120,y); pdf.text(String(sub.total-sub.present),145,y);
-    pdf.text(String(sub.total),163,y);
-    pdf.setTextColor(r,g,b); pdf.setFont(undefined,"bold");
-    pdf.text(pct+"%",185,y);
-    pdf.setFont(undefined,"normal"); y+=12;
+  pdf.setTextColor(0,0,0); pdf.setFontSize(13); pdf.setFont(undefined,"bold"); pdf.text("Attendance Summary",15,42);
+  pdf.setFont(undefined,"normal"); pdf.setFontSize(11); pdf.text("Overall: 87%  |  Attended: 174  |  Missed: 26  |  Total: 200",15,52);
+  pdf.setFillColor(37,99,235); pdf.rect(15,62,180,10,"F"); pdf.setTextColor(255,255,255); pdf.setFont(undefined,"bold"); pdf.setFontSize(10);
+  pdf.text("Subject",18,69); pdf.text("Code",90,69); pdf.text("Present",115,69); pdf.text("Absent",140,69); pdf.text("Total",160,69); pdf.text("Attendance%",175,69);
+  pdf.setFont(undefined,"normal"); let y=80;
+  attendanceData.forEach((sub,i)=>{
+    if(i%2===0){pdf.setFillColor(245,248,255);pdf.rect(15,y-5,180,10,"F");}
+    pdf.setTextColor(0,0,0); const pct=Math.round((sub.present/sub.total)*100); const [r,g,b]=pct>=85?[22,163,74]:pct>=75?[180,83,9]:[185,28,28];
+    pdf.text(sub.name,18,y); pdf.text(sub.code,90,y); pdf.text(String(sub.present),120,y); pdf.text(String(sub.total-sub.present),145,y); pdf.text(String(sub.total),163,y);
+    pdf.setTextColor(r,g,b); pdf.setFont(undefined,"bold"); pdf.text(pct+"%",185,y); pdf.setFont(undefined,"normal"); y+=12;
   });
-  pdf.setTextColor(100,100,100); pdf.setFontSize(9);
-  pdf.text("* Students with attendance below 75% may be debarred from examinations.",15,y+10);
+  pdf.setTextColor(100,100,100); pdf.setFontSize(9); pdf.text("* Students with attendance below 75% may be debarred from examinations.",15,y+10);
   pdf.save("Attendance_Report.pdf");
 };
- 
+
 window.addEventListener("DOMContentLoaded", () => {
   renderAttendanceTable();
   setTimeout(renderCharts, 200);
   lucide.createIcons();
 });
-
-// ─── Colors for difficulty ───
-const DIFF_COLORS = {
-  Beginner:     { bg: "#d1fae5", color: "#065f46" },
-  Intermediate: { bg: "#fef3c7", color: "#92400e" },
-  Advanced:     { bg: "#fee2e2", color: "#991b1b" },
-};
-const TYPE_ICONS  = { video:"youtube", link:"link", article:"file-text", quiz:"help-circle", assignment:"clipboard-list" };
-const TYPE_COLORS = { video:"#dc2626", link:"#2563eb", article:"#7c3aed", quiz:"#d97706", assignment:"#059669" };
- 
-// ─── Auth ───
-onAuthStateChanged(auth, async user => {
-  if (!user) return;
-  lmsCurrentUser = user;
-  const snap = await getDoc(doc(db, "users", user.uid));
-  if (snap.exists()) lmsStudentData = snap.data();
-  await lmsLoadAll();
-  lucide.createIcons();
-});
- 
-// ─── Load Everything ───
-async function lmsLoadAll() {
-  if (!lmsCurrentUser || !lmsStudentData) return;
-  await lmsLoadProgress();
-  await lmsLoadCourses();
-  lmsUpdateHeroStats();
-}
- 
-async function lmsLoadProgress() {
-  try {
-    const snap = await getDoc(doc(db, "lms_progress", lmsCurrentUser.uid));
-    if (snap.exists()) {
-      const data = snap.data();
-      lmsEnrolledIds = data.enrolledIds || [];
-      // completedLessons stored as array of strings "wi_li"
-      const raw = data.completedLessons || {};
-      lmsProgressMap = {};
-      Object.entries(raw).forEach(([courseId, lessons]) => {
-        lmsProgressMap[courseId] = { completedLessons: new Set(lessons) };
-      });
-    }
-  } catch(e) { console.error("Progress load", e); }
-}
- 
-async function lmsLoadCourses() {
-  try {
-    const q = query(
-      collection(db, "lms_courses"),
-      where("department", "==", lmsStudentData.department),
-      where("isPublished", "==", true)
-    );
-    const snap = await getDocs(q);
-    lmsAllCourses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    lmsAllCourses.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    lmsRenderExplore();
-    lmsRenderMyCourses();
-    lmsRenderCertificates();
-    lmsUpdateMiniStats();
-  } catch(e) {
-    console.error("Course load", e);
-    document.getElementById("lmsCourseGrid").innerHTML =
-      `<div class="lms-empty" style="grid-column:1/-1;"><div class="lms-empty-icon">⚠️</div><p>Failed to load courses. Please refresh.</p></div>`;
-  }
-}
- 
-function lmsUpdateHeroStats() {
-  const enrolled   = lmsEnrolledIds.length;
-  const completed  = lmsEnrolledIds.filter(id => lmsCourseProgress(id) === 100).length;
-  const hours      = lmsAllCourses
-    .filter(c => lmsEnrolledIds.includes(c.id))
-    .reduce((s, c) => s + parseFloat(c.estimatedHours || 0), 0);
-  setEl("lmsStatEnrolled",  enrolled);
-  setEl("lmsStatCompleted", completed);
-  setEl("lmsStatHours",     hours > 0 ? Math.round(hours) + "h" : "—");
-}
- 
-function lmsUpdateMiniStats() {
-  const subjects = new Set(lmsAllCourses.map(c => c.subject)).size;
-  const totalLessons = lmsAllCourses.reduce((s, c) => s + (c.totalLessons || 0), 0);
-  setEl("lmsExpTotal",     lmsAllCourses.length);
-  setEl("lmsExpPublished", lmsAllCourses.length);
-  setEl("lmsExpSubjects",  subjects);
-  setEl("lmsExpLessons",   totalLessons);
-}
- 
-function setEl(id, val) { const el = document.getElementById(id); if (el) el.innerText = val; }
- 
-// ─── Progress Helper ───
-function lmsCourseProgress(courseId) {
-  const course = lmsAllCourses.find(c => c.id === courseId);
-  if (!course) return 0;
-  const total = course.totalLessons || 0;
-  if (total === 0) return 0;
-  const done = (lmsProgressMap[courseId]?.completedLessons?.size) || 0;
-  return Math.round((done / total) * 100);
-}
- 
-function lmsIsEnrolled(courseId) { return lmsEnrolledIds.includes(courseId); }
- 
-// ─── RENDER: Explore ───
-function lmsRenderExplore() {
-  const grid = document.getElementById("lmsCourseGrid");
-  const search = (document.getElementById("lmsSearchInput")?.value || "").toLowerCase();
- 
-  const filtered = lmsAllCourses.filter(c => {
-    const matchDiff   = !lmsDiffFilter || c.difficulty === lmsDiffFilter;
-    const matchSearch = !search ||
-      c.title.toLowerCase().includes(search) ||
-      (c.subject||"").toLowerCase().includes(search) ||
-      (c.description||"").toLowerCase().includes(search) ||
-      (c.tags||[]).some(t => t.toLowerCase().includes(search));
-    return matchDiff && matchSearch;
-  });
- 
-  if (filtered.length === 0) {
-    grid.innerHTML = `<div class="lms-empty" style="grid-column:1/-1;">
-      <div class="lms-empty-icon">🔍</div>
-      <h3 style="color:#1e293b;margin-bottom:8px;">No courses found</h3>
-      <p>Try adjusting your search or filters.</p>
-    </div>`;
-    lucide.createIcons(); return;
-  }
- 
-  grid.className = `lms-course-grid${lmsViewMode === "list" ? " list-view" : ""}`;
-  grid.innerHTML = filtered.map(c => lmsCourseCardHTML(c)).join("");
-  lucide.createIcons();
-}
- 
-function lmsCourseCardHTML(c) {
-  const enrolled = lmsIsEnrolled(c.id);
-  const pct = lmsCourseProgress(c.id);
-  const dc = DIFF_COLORS[c.difficulty] || DIFF_COLORS.Beginner;
-  const tagHtml = (c.tags || []).slice(0, 3).map(t => `<span class="lms-tag">${t}</span>`).join("");
-  const thumbStyle = c.thumbnail
-    ? `background-image:url('${c.thumbnail}');background-size:cover;background-position:center;`
-    : `background:linear-gradient(135deg,#0d1117,#1e3a5f);`;
-  const initials = (c.createdByName || "F").split(" ").map(n=>n[0]).join("").toUpperCase();
- 
-  return `
-    <div class="lms-course-card" onclick="lmsOpenCourse('${c.id}')">
-      <div class="lms-course-thumb" style="${thumbStyle}">
-        <div class="lms-course-thumb-overlay">
-          <div class="lms-play-btn"><i data-lucide="play" size="16"></i></div>
-          <span class="lms-diff-tag" style="background:${dc.bg};color:${dc.color};">${c.difficulty}</span>
-        </div>
-        ${enrolled && pct > 0 ? `
-          <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:rgba(255,255,255,0.15);">
-            <div style="height:100%;width:${pct}%;background:#4ade80;transition:width 0.8s;"></div>
-          </div>` : ""}
-      </div>
-      <div class="lms-course-body">
-        <div class="lms-course-tags">${tagHtml}</div>
-        <div class="lms-course-title">${c.title}</div>
-        ${c.description ? `<div class="lms-course-desc">${c.description.slice(0, 90)}${c.description.length > 90 ? "…" : ""}</div>` : ""}
-        <div class="lms-course-meta-row">
-          <span><i data-lucide="book" size="11"></i>${c.subject}</span>
-          <span><i data-lucide="layout-list" size="11"></i>${c.totalWeeks||0} weeks</span>
-          <span><i data-lucide="play-circle" size="11"></i>${c.totalLessons||0} lessons</span>
-          <span><i data-lucide="clock" size="11"></i>${c.estimatedHours||"—"} hrs</span>
-        </div>
-        ${enrolled && pct > 0 ? `
-          <div style="margin-bottom:12px;">
-            <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#64748b;margin-bottom:5px;">
-              <span>Progress</span><span style="color:${pct===100?'#22c55e':'#2563eb'}">${pct}%</span>
-            </div>
-            <div class="lms-progress-wrap"><div class="lms-progress-bar" style="width:${pct}%;background:${pct===100?'#22c55e':'linear-gradient(90deg,#2563eb,#6366f1)'};"></div></div>
-          </div>` : ""}
-        <div class="lms-course-footer">
-          <div class="lms-faculty-info">
-            <div class="lms-faculty-avatar">${initials}</div>
-            <div class="lms-faculty-name">${c.createdByName || "Faculty"}</div>
-          </div>
-          ${enrolled
-            ? `<button class="lms-enrolled-btn" onclick="event.stopPropagation();lmsOpenCourse('${c.id}')">
-                <i data-lucide="${pct===100?'award':'play'}" size="12"></i>
-                ${pct===100?"Review":"Resume"}
-              </button>`
-            : `<button class="lms-enroll-btn" onclick="event.stopPropagation();lmsEnroll('${c.id}')">
-                <i data-lucide="plus" size="12"></i> Enroll
-              </button>`}
-        </div>
-      </div>
-    </div>`;
-}
- 
-// ─── RENDER: My Courses ───
-function lmsRenderMyCourses() {
-  const container = document.getElementById("lmsMyCoursesContainer");
-  const enrolled  = lmsAllCourses.filter(c => lmsIsEnrolled(c.id));
- 
-  // Continue Learning row
-  const inProgress = enrolled.filter(c => { const p = lmsCourseProgress(c.id); return p > 0 && p < 100; });
-  const continueSection = document.getElementById("lmsContinueSection");
-  const continueRow     = document.getElementById("lmsContinueRow");
-  const continueCount   = document.getElementById("lmsContinueCount");
- 
-  if (inProgress.length > 0) {
-    continueSection.style.display = "block";
-    if (continueCount) continueCount.innerText = inProgress.length;
-    continueRow.innerHTML = inProgress.map(c => {
-      const pct = lmsCourseProgress(c.id);
-      const done = lmsProgressMap[c.id]?.completedLessons?.size || 0;
-      const thumbStyle = c.thumbnail
-        ? `background-image:url('${c.thumbnail}');background-size:cover;background-position:center;`
-        : `background:linear-gradient(135deg,#0d1117,#1e3a5f);`;
-      return `
-        <div class="lms-continue-card" onclick="lmsOpenCourse('${c.id}')">
-          <div class="lms-continue-thumb" style="${thumbStyle}">
-            <div class="lms-continue-thumb-overlay">
-              <span style="color:white;font-size:11px;font-weight:700;background:rgba(0,0,0,0.4);padding:4px 10px;border-radius:8px;">${c.subject}</span>
-            </div>
-          </div>
-          <div class="lms-continue-body">
-            <div class="lms-continue-subject">${c.subject} · Sem ${c.semester}</div>
-            <div class="lms-continue-title">${c.title}</div>
-            <div class="lms-progress-wrap"><div class="lms-progress-bar" style="width:${pct}%;"></div></div>
-            <div class="lms-progress-label"><span>${done} lessons done</span><span>${pct}%</span></div>
-            <button class="lms-resume-btn"><i data-lucide="play" size="13"></i> Continue Learning</button>
-          </div>
-        </div>`;
-    }).join("");
-  } else {
-    continueSection.style.display = "none";
-  }
- 
-  if (enrolled.length === 0) {
-    container.innerHTML = `
-      <div class="lms-empty">
-        <div class="lms-empty-icon">📚</div>
-        <h3 style="color:#1e293b;margin-bottom:8px;">No courses yet</h3>
-        <p>Go to <b>Explore Courses</b> to enroll in your first course.</p>
-        <button onclick="lmsSwitchTab('explore',document.getElementById('lmstab-explore'))"
-          style="margin-top:16px;background:#2563eb;color:white;border:none;padding:12px 24px;border-radius:12px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;">
-          Explore Courses →
-        </button>
-      </div>`;
-    lucide.createIcons(); return;
-  }
- 
-  container.innerHTML = `<div class="lms-course-grid">${enrolled.map(c => lmsCourseCardHTML(c)).join("")}</div>`;
-  lucide.createIcons();
-}
- 
-// ─── RENDER: Certificates ───
-function lmsRenderCertificates() {
-  const container = document.getElementById("lmsCertContainer");
-  const completed = lmsAllCourses.filter(c => lmsIsEnrolled(c.id) && lmsCourseProgress(c.id) === 100);
-  if (completed.length === 0) {
-    container.innerHTML = `
-      <div class="lms-empty">
-        <div class="lms-empty-icon">🎓</div>
-        <h3 style="color:#1e293b;margin-bottom:8px;">No certificates yet</h3>
-        <p>Complete a course to earn your first certificate!</p>
-      </div>`;
-    lucide.createIcons(); return;
-  }
-  container.innerHTML = `<div class="lms-cert-grid">
-    ${completed.map(c => `
-      <div class="lms-cert-card">
-        <div class="lms-cert-title">${c.title}</div>
-        <div class="lms-cert-date">${c.subject} · Sem ${c.semester}</div>
-        <button class="lms-cert-btn" onclick="lmsDownloadCert('${c.id}')">
-          <i data-lucide="download" size="12"></i> Download Certificate
-        </button>
-      </div>`).join("")}
-  </div>`;
-  lucide.createIcons();
-}
- 
-// ─── ENROLL ───
-window.lmsEnroll = async function(courseId) {
-  if (!lmsCurrentUser) return;
-  if (lmsEnrolledIds.includes(courseId)) { lmsOpenCourse(courseId); return; }
-  lmsEnrolledIds.push(courseId);
-  if (!lmsProgressMap[courseId]) lmsProgressMap[courseId] = { completedLessons: new Set() };
-  await lmsSaveProgress();
-  lmsUpdateHeroStats();
-  lmsRenderExplore();
-  lmsOpenCourse(courseId);
-};
- 
-// ─── OPEN COURSE PLAYER ───
-window.lmsOpenCourse = async function(courseId) {
-  const course = lmsAllCourses.find(c => c.id === courseId);
-  if (!course) return;
- 
-  // Auto-enroll if needed
-  if (!lmsIsEnrolled(courseId)) { await lmsEnroll(courseId); return; }
- 
-  lmsCurrentCourse = course;
-  if (!lmsProgressMap[courseId]) lmsProgressMap[courseId] = { completedLessons: new Set() };
- 
-  // Open first incomplete lesson
-  let targetWi = 0, targetLi = 0;
-  outer: for (let wi = 0; wi < (course.weeks||[]).length; wi++) {
-    for (let li = 0; li < (course.weeks[wi].lessons||[]).length; li++) {
-      if (!lmsProgressMap[courseId].completedLessons.has(`${wi}_${li}`)) {
-        targetWi = wi; targetLi = li; break outer;
-      }
-    }
-  }
-  lmsCurrentLesson = { wi: targetWi, li: targetLi };
- 
-  const overlay = document.getElementById("lmsCoursePlayer");
-  overlay.classList.add("open");
-  document.body.style.overflow = "hidden";
-  document.getElementById("lmsPlayerCourseTitle").innerText = course.title;
-  lmsRenderPlayerSidebar();
-  lmsRenderPlayerLesson();
-  lucide.createIcons();
-};
- 
-window.lmsClosePlayer = function() {
-  document.getElementById("lmsCoursePlayer").classList.remove("open");
-  document.body.style.overflow = "";
-  lmsRenderMyCourses();
-  lmsRenderExplore();
-  lmsRenderCertificates();
-  lmsUpdateHeroStats();
-};
- 
-// ─── RENDER SIDEBAR ───
-function lmsRenderPlayerSidebar() {
-  const sidebar = document.getElementById("lmsPlayerSidebar");
-  const course  = lmsCurrentCourse;
-  const { wi: curWi, li: curLi } = lmsCurrentLesson;
-  const progress = lmsProgressMap[course.id];
- 
-  let html = "";
-  (course.weeks || []).forEach((week, wi) => {
-    const weekLessons = week.lessons || [];
-    const weekDone = weekLessons.filter((_, li) => progress.completedLessons.has(`${wi}_${li}`)).length;
-    html += `
-      <div class="lms-player-week-header">
-        <div class="lms-player-week-title">${week.title}</div>
-        <span style="font-size:10px;color:rgba(255,255,255,0.35);font-weight:700;">${weekDone}/${weekLessons.length}</span>
-      </div>`;
-    weekLessons.forEach((lesson, li) => {
-      const isDone   = progress.completedLessons.has(`${wi}_${li}`);
-      const isActive = wi === curWi && li === curLi;
-      const tc = TYPE_COLORS[lesson.type] || "#64748b";
-      html += `
-        <div class="lms-player-lesson ${isActive ? "active" : ""} ${isDone && !isActive ? "completed" : ""}"
-          onclick="lmsNavigateLesson(${wi},${li})">
-          <div class="lms-lesson-icon" style="background:${tc}18;color:${tc};">
-            <i data-lucide="${TYPE_ICONS[lesson.type]||'link'}" size="14"></i>
-          </div>
-          <div class="lms-player-lesson-info">
-            <div class="lms-player-lesson-title">${lesson.title}</div>
-            <div class="lms-player-lesson-meta">${lesson.type.charAt(0).toUpperCase()+lesson.type.slice(1)}${lesson.duration ? " · "+lesson.duration : ""}</div>
-          </div>
-          ${isDone ? `<div class="lms-done-check"><i data-lucide="check" size="10" style="color:white;"></i></div>` : ""}
-        </div>`;
-    });
-  });
-  sidebar.innerHTML = html;
- 
-  // Update progress pill
-  const total = lmsCurrentCourse.totalLessons || 0;
-  const done  = progress.completedLessons.size;
-  document.getElementById("lmsPlayerProgressPill").innerText = `${done} / ${total} lessons`;
-  lucide.createIcons();
-}
- 
-// ─── RENDER LESSON CONTENT ───
-function lmsRenderPlayerLesson() {
-  const course  = lmsCurrentCourse;
-  const { wi, li } = lmsCurrentLesson;
-  const week    = course.weeks?.[wi];
-  const lesson  = week?.lessons?.[li];
-  if (!lesson) return;
- 
-  const main    = document.getElementById("lmsPlayerMain");
-  const tc      = TYPE_COLORS[lesson.type] || "#64748b";
-  const progress = lmsProgressMap[course.id];
-  const isDone  = progress.completedLessons.has(`${wi}_${li}`);
- 
-  // Determine prev/next
-  const allLessons = [];
-  (course.weeks || []).forEach((w, wIdx) => (w.lessons || []).forEach((l, lIdx) => allLessons.push({ wi: wIdx, li: lIdx, lesson: l })));
-  const curIdx  = allLessons.findIndex(x => x.wi === wi && x.li === li);
-  const hasPrev = curIdx > 0;
-  const hasNext = curIdx < allLessons.length - 1;
- 
-  let contentHTML = "";
-  if (lesson.type === "video") {
-    contentHTML = `
-      <div class="lms-video-area">
-        ${lesson.url
-          ? `<iframe src="${lesson.url}" allowfullscreen allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" loading="lazy"></iframe>`
-          : `<div class="lms-video-placeholder">
-              <div class="lms-video-placeholder-icon"><i data-lucide="video-off" size="28" style="opacity:0.5;"></i></div>
-              <p style="font-size:13px;">Video not available</p>
-            </div>`}
-      </div>`;
-  } else {
-    contentHTML = `
-      <div class="lms-resource-area">
-        <a href="${lesson.url}" target="_blank" class="lms-resource-card">
-          <div class="lms-resource-icon-box" style="background:${tc}15;color:${tc};">
-            <i data-lucide="${TYPE_ICONS[lesson.type]||'link'}" size="22"></i>
-          </div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:800;font-size:15px;color:white;margin-bottom:4px;">Open ${lesson.type.charAt(0).toUpperCase()+lesson.type.slice(1)}</div>
-            <div style="font-size:12px;color:rgba(255,255,255,0.4);word-break:break-all;">${lesson.url}</div>
-          </div>
-          <i data-lucide="external-link" size="16" style="color:rgba(255,255,255,0.3);flex-shrink:0;"></i>
-        </a>
-      </div>`;
-  }
- 
-  main.innerHTML = `
-    ${contentHTML}
-    <div class="lms-lesson-detail-area">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:4px 12px;border-radius:100px;background:${tc}20;color:${tc};text-transform:uppercase;">
-          <i data-lucide="${TYPE_ICONS[lesson.type]||'link'}" size="11"></i> ${lesson.type}
-        </span>
-        ${isDone ? `<span style="display:inline-flex;align-items:center;gap:5px;background:#d1fae520;color:#4ade80;font-size:11px;font-weight:800;padding:4px 12px;border-radius:100px;"><i data-lucide="check-circle" size="11"></i> Completed</span>` : ""}
-      </div>
-      <h2 class="lms-lesson-detail-title">${lesson.title}</h2>
-      <div class="lms-lesson-detail-meta">
-        <span><i data-lucide="layers" size="12"></i> Week ${wi + 1}: ${week.title}</span>
-        ${lesson.duration ? `<span><i data-lucide="clock" size="12"></i>${lesson.duration}</span>` : ""}
-        <span><i data-lucide="list" size="12"></i>Lesson ${li + 1} of ${week.lessons.length}</span>
-      </div>
-      ${lesson.description ? `<div class="lms-lesson-desc">${lesson.description}</div>` : ""}
-      <div class="lms-lesson-nav">
-        ${hasPrev ? `<button class="lms-prev-btn" onclick="lmsNavigateLesson(${allLessons[curIdx-1].wi},${allLessons[curIdx-1].li})"><i data-lucide="arrow-left" size="14"></i> Previous</button>` : ""}
-        ${!isDone
-          ? `<button class="lms-next-btn" onclick="lmsMarkAndNext(${hasNext},${hasNext?allLessons[curIdx+1].wi:-1},${hasNext?allLessons[curIdx+1].li:-1})">
-              <i data-lucide="check" size="14"></i> Mark Done${hasNext?" & Next":""}
-             </button>`
-          : hasNext
-            ? `<button class="lms-next-btn" onclick="lmsNavigateLesson(${allLessons[curIdx+1].wi},${allLessons[curIdx+1].li})">
-                Next Lesson <i data-lucide="arrow-right" size="14"></i>
-               </button>`
-            : `<div style="color:#4ade80;font-weight:800;font-size:14px;display:flex;align-items:center;gap:8px;padding:12px;">
-                🎉 You've completed this course!
-               </div>`}
-      </div>
-    </div>`;
- 
-  // Update complete button
-  const completeBtn = document.getElementById("lmsMarkCompleteBtn");
-  if (completeBtn) {
-    completeBtn.innerHTML = isDone
-      ? `<i data-lucide="check-circle" size="14"></i> Completed`
-      : `<i data-lucide="check" size="14"></i> Mark Complete`;
-    completeBtn.style.background = isDone ? "#059669" : "#22c55e";
-  }
- 
-  lucide.createIcons();
-}
- 
-window.lmsNavigateLesson = function(wi, li) {
-  lmsCurrentLesson = { wi, li };
-  lmsRenderPlayerSidebar();
-  lmsRenderPlayerLesson();
-  document.getElementById("lmsPlayerMain").scrollTo({ top: 0, behavior: "smooth" });
-};
- 
-window.lmsMarkLessonComplete = async function() {
-  const { wi, li } = lmsCurrentLesson;
-  const key = `${wi}_${li}`;
-  const progress = lmsProgressMap[lmsCurrentCourse.id];
-  if (progress.completedLessons.has(key)) return;
-  progress.completedLessons.add(key);
-  await lmsSaveProgress();
-  lmsRenderPlayerSidebar();
-  lmsRenderPlayerLesson();
-  // Check if course complete
-  const total = lmsCurrentCourse.totalLessons || 0;
-  if (progress.completedLessons.size >= total) {
-    setTimeout(() => {
-      if (confirm(`🎉 Congratulations! You've completed "${lmsCurrentCourse.title}"!\n\nA certificate has been earned. Close the player to view it.`)) {
-        lmsClosePlayer();
-        setTimeout(() => lmsSwitchTab("certificates", document.getElementById("lmstab-certificates")), 300);
-      }
-    }, 400);
-  }
-};
- 
-window.lmsMarkAndNext = async function(hasNext, nextWi, nextLi) {
-  await lmsMarkLessonComplete();
-  if (hasNext && nextWi >= 0) {
-    setTimeout(() => lmsNavigateLesson(nextWi, nextLi), 300);
-  }
-};
- 
-// ─── SAVE PROGRESS to Firestore ───
-async function lmsSaveProgress() {
-  if (!lmsCurrentUser) return;
-  try {
-    const completedData = {};
-    Object.entries(lmsProgressMap).forEach(([courseId, data]) => {
-      completedData[courseId] = [...data.completedLessons];
-    });
-    await setDoc(doc(db, "lms_progress", lmsCurrentUser.uid), {
-      enrolledIds: lmsEnrolledIds,
-      completedLessons: completedData,
-      updatedAt: serverTimestamp()
-    });
-  } catch(e) { console.error("Save progress error:", e); }
-}
- 
-// ─── CERTIFICATE DOWNLOAD ───
-window.lmsDownloadCert = function(courseId) {
-  const course = lmsAllCourses.find(c => c.id === courseId);
-  if (!course) return;
-  const name = lmsStudentData?.name || "Student";
-  const dept = lmsStudentData?.department || "";
-  const prn  = lmsStudentData?.prn || "";
-  const dateStr = new Date().toLocaleDateString("en-IN", { day:"2-digit", month:"long", year:"numeric" });
- 
-  // Build a simple printable cert in a new window
-  const certWindow = window.open("", "_blank");
-  certWindow.document.write(`<!DOCTYPE html><html><head><title>Certificate</title>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <style>
-    * { margin:0;padding:0;box-sizing:border-box; }
-    body { background:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px; font-family:'DM Sans',sans-serif; }
-    .cert {
-      width:850px;min-height:580px;background:white;border-radius:28px;
-      padding:60px 80px;text-align:center;
-      border:2px solid #e2e8f0;
-      box-shadow:0 40px 80px rgba(0,0,0,0.1);
-      position:relative;overflow:hidden;
-    }
-    .cert::before {
-      content:'';position:absolute;inset:16px;border:2px solid #dbeafe;border-radius:18px;pointer-events:none;
-    }
-    .cert-top { color:#2563eb;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:3px;margin-bottom:20px; }
-    .cert-logo { font-family:'Syne',sans-serif;font-size:22px;font-weight:900;color:#0d1117;margin-bottom:8px; }
-    .cert-logo span { color:#2563eb; }
-    .cert-divider { width:80px;height:3px;background:linear-gradient(90deg,#2563eb,#6366f1);border-radius:2px;margin:20px auto; }
-    .cert-body { font-size:14px;color:#64748b;margin-bottom:16px; }
-    .cert-name { font-family:'Syne',sans-serif;font-size:42px;font-weight:900;color:#0d1117;margin:8px 0;line-height:1; }
-    .cert-course { font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#2563eb;margin:20px 0 8px; }
-    .cert-meta { color:#94a3b8;font-size:13px;margin-bottom:30px; }
-    .cert-footer { display:flex;justify-content:space-between;align-items:flex-end;margin-top:40px;padding-top:24px;border-top:1px solid #f1f5f9; }
-    .cert-sig { text-align:center; }
-    .cert-sig-line { width:120px;height:1px;background:#cbd5e1;margin:8px auto 4px; }
-    .cert-sig-label { font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8; }
-    .cert-seal { width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#6366f1);display:flex;align-items:center;justify-content:center;color:white;font-size:24px;font-weight:900;font-family:'Syne',sans-serif; }
-    @media print { body{background:white;padding:0;} .cert{box-shadow:none;border-radius:0;} }
-  </style>
-  </head><body>
-    <div class="cert">
-      <div class="cert-top">Certificate of Completion</div>
-      <div class="cert-logo">EduSmart <span>360</span></div>
-      <div class="cert-divider"></div>
-      <div class="cert-body">This is to certify that</div>
-      <div class="cert-name">${name}</div>
-      <div class="cert-body" style="margin-top:6px;">${dept} · PRN: ${prn}</div>
-      <div class="cert-body" style="margin-top:4px;">has successfully completed the course</div>
-      <div class="cert-course">${course.title}</div>
-      <div class="cert-meta">${course.subject} · Semester ${course.semester} · ${course.difficulty} Level · ${course.totalLessons} Lessons</div>
-      <div class="cert-footer">
-        <div class="cert-sig">
-          <div style="font-size:18px;font-family:'Syne',sans-serif;font-weight:800;color:#0d1117;margin-bottom:4px;">${course.createdByName||"Faculty"}</div>
-          <div class="cert-sig-line"></div>
-          <div class="cert-sig-label">Course Instructor</div>
-        </div>
-        <div class="cert-seal">ES</div>
-        <div class="cert-sig">
-          <div style="font-size:13px;font-weight:700;color:#0d1117;margin-bottom:4px;">${dateStr}</div>
-          <div class="cert-sig-line"></div>
-          <div class="cert-sig-label">Date of Completion</div>
-        </div>
-      </div>
-    </div>
-    <script>setTimeout(()=>window.print(),800);<\/script>
-  </body></html>`);
-  certWindow.document.close();
-};
- 
-// ─── TAB SWITCHING ───
-window.lmsSwitchTab = function(tab, el) {
-  document.querySelectorAll(".lms-inner-tab").forEach(t => t.classList.remove("active"));
-  document.querySelectorAll(".lms-tab-pane").forEach(p => p.style.display = "none");
-  document.getElementById("lmspane-" + tab).style.display = "block";
-  if (el) el.classList.add("active");
-  if (tab === "mycourses") lmsRenderMyCourses();
-  if (tab === "certificates") lmsRenderCertificates();
-  lucide.createIcons();
-};
- 
-// ─── FILTER + VIEW ───
-window.lmsFilterCourses = function() { lmsRenderExplore(); };
-window.lmsSetDiffFilter = function(el, diff) {
-  lmsDiffFilter = diff;
-  document.querySelectorAll("#lmsDiffFilters .lms-filter-chip").forEach(c => c.classList.remove("active"));
-  el.classList.add("active");
-  lmsRenderExplore();
-};
-window.lmsSetView = function(mode) {
-  lmsViewMode = mode;
-  document.getElementById("lmsViewGrid").classList.toggle("active", mode === "grid");
-  document.getElementById("lmsViewList").classList.toggle("active", mode === "list");
-  lmsRenderExplore();
-};
- 
-// ─── Hook into showSection to load LMS when navigating ───
-const _origShowSection = window.showSection;
-window.showSection = function(id, el) {
-  if (_origShowSection) _origShowSection(id, el);
-  if (id === "lms") {
-    lmsLoadAll();
-    lucide.createIcons();
-  }
-};
- 
-lucide.createIcons();
-
 </script>
  <!-- ================================================================
      LMS COURSE PLAYER OVERLAY  (add before </body>)
