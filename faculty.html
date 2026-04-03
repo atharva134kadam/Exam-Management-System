@@ -7,7 +7,6 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <!-- SheetJS for Excel export (client-side, no server needed) -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 
 <script type="module">
@@ -49,10 +48,14 @@ const TT_PERIODS = ["9:00","10:00","11:00","12:00","1:00","2:00","3:00","4:00"];
 const TT_COLORS  = ["#2563eb","#7c3aed","#db2777","#059669","#d97706","#0891b2","#dc2626","#65a30d"];
 
 /* ─── Attendance state ─── */
-let attStudents    = [];   // students for current marking session
-let attRecords     = {};   // { uid: 'P'|'A'|'L' }
-let attAllRecords  = [];   // all saved attendance docs for this dept
-let attSubjects    = [];   // derived from timetables / exams
+let attSessionStudents   = [];
+let attSessionRecords    = {};
+let attAllDocs           = [];
+let attSubjectsList      = [];
+
+/* ─── LMS Course Builder state ─── */
+let lmsCourseWeeks = [];   // [{id, title, lessons:[{id,title,type,url,description,duration}]}]
+let lmsEditingCourseId = null;
 
 /* ================= AUTH ================= */
 onAuthStateChanged(auth, async (user) => {
@@ -296,13 +299,13 @@ window.publishExamResult = async function () {
   try {
     await setDoc(doc(db,"results_published",`${selectedStudent.uid}_${examId}`),{breakdown,department:facultyDept,examId,examTitle:exam.title,maxMarks:exam.totalMarks||total,obtainedMarks:total,prn:selectedStudent.prn,publishedAt:serverTimestamp(),publishedBy:facultyUID,studentId:selectedStudent.uid,studentName:selectedStudent.name});
     alert(`Result Published!\n${selectedStudent.name} secured ${total}/${exam.totalMarks}`);
-    document.getElementById("questionMarksContainer").innerHTML="";document.getElementById("resQuestionCount").value="";document.getElementById("resStudentUID").value="";document.getElementById("selectedStudentInfo").innerHTML="";document.getElementById("resExamSelect").disabled=true;document.getElementById("resExamSelect").innerHTML='<option value="">Search UID first</option>';selectedStudent=null;
+    document.getElementById("questionMarksContainer").innerHTML="";selectedStudent=null;
   } catch(error){console.error(error);alert("Error publishing result");}
 };
 window.checkIfResultExists = async function () {
   const examId=document.getElementById("resExamSelect").value;if(!selectedStudent||!examId)return;
   const resultDoc=await getDoc(doc(db,"results_published",`${selectedStudent.uid}_${examId}`));
-  if(resultDoc.exists()){alert("⚠ Result already published for this student & subject.");document.getElementById("resExamSelect").value="";}
+  if(resultDoc.exists()){alert("⚠ Result already published for this student & subject.");}
 };
 window.searchStudentByUID = async function () {
   const uid=document.getElementById("resStudentUID").value.trim(),infoBox=document.getElementById("selectedStudentInfo"),examSelect=document.getElementById("resExamSelect");
@@ -354,18 +357,17 @@ async function loadReevaluationRequests(){
   container.innerHTML="";
   snap.forEach(docSnap=>{
     const r=docSnap.data(),rid=docSnap.id;
-    container.innerHTML+=`<div class="card" style="margin-bottom:15px;"><div class="flex-between"><div><b>${r.studentName}</b><div style="font-size:13px;color:var(--muted)">${r.examTitle} (${r.obtainedMarks}/${r.maxMarks})</div></div><span class="badge-blue">${r.status}</span></div><p style="margin-top:10px;"><b>Reason:</b> ${r.reason}</p>${r.status==="Pending"?`<div style="margin-top:15px;"><label>Upload Answer Sheet (PDF)</label><input type="file" accept="application/pdf" onchange="uploadAnswerSheet(event,'${rid}')"><textarea id="facultyComment-${rid}" placeholder="Enter comment..." rows="2" style="margin-top:10px;"></textarea><div style="display:flex;gap:10px;margin-top:10px;"><button class="action-btn w-100" style="background:var(--green)" onclick="updateReevaluationStatus('${rid}','Approved')">Approve</button><button class="action-btn w-100" style="background:var(--red)" onclick="updateReevaluationStatus('${rid}','Rejected')">Reject</button></div></div>`:`${r.answerSheetURL?`<a href="${r.answerSheetURL}" target="_blank">View Uploaded PDF</a>`:""}<p><b>Faculty Comment:</b> ${r.facultyComment||"None"}</p>`}</div>`;
+    container.innerHTML+=`<div class="card" style="margin-bottom:15px;"><div class="flex-between"><div><b>${r.studentName}</b><div style="font-size:13px;color:var(--muted)">${r.examTitle} (${r.obtainedMarks}/${r.maxMarks})</div></div><span class="badge-blue">${r.status}</span></div><p style="margin-top:10px;"><b>Reason:</b> ${r.reason}</p>${r.status==="Pending"?`<div style="margin-top:15px;"><textarea id="facultyComment-${rid}" placeholder="Enter comment..." rows="2" style="margin-top:10px;"></textarea><div style="display:flex;gap:10px;margin-top:10px;"><button class="action-btn w-100" style="background:var(--green)" onclick="updateReevaluationStatus('${rid}','Approved')">Approve</button><button class="action-btn w-100" style="background:var(--red)" onclick="updateReevaluationStatus('${rid}','Rejected')">Reject</button></div></div>`:""}</div>`;
   });
   lucide.createIcons();
 }
-window.uploadAnswerSheet = async function(){alert("File storage is not configured. Contact admin.");};
 window.updateReevaluationStatus = async function (requestId,status){
   const comment=document.getElementById(`facultyComment-${requestId}`)?.value||"";
   await updateDoc(doc(db,"reevaluation_requests",requestId),{status,facultyComment:comment,resolvedAt:serverTimestamp(),resolvedBy:facultyUID});
   alert("Status Updated!"); loadReevaluationRequests();
 };
 
-/* ================= CURRICULUM ================= */
+/* ================= CURRICULUM (materials) ================= */
 let curriculumItems=[];
 window.loadCurriculum = async function(){
   const container=document.getElementById("curriculumList");
@@ -380,7 +382,7 @@ window.loadCurriculum = async function(){
     curriculumItems.forEach(c=>{
       const iconInfo=getCurriculumIcon(c.resourceType),tagHTML=(c.tags||[]).map(t=>`<span class="curr-tag">${t}</span>`).join("");
       const date=c.createdAt?.toDate?c.createdAt.toDate().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"--";
-      container.innerHTML+=`<div class="curr-card animate-in" id="curr-${c.id}"><div class="curr-card-left"><div class="curr-icon-box ${iconInfo.cls}"><i data-lucide="${iconInfo.icon}" size="22"></i></div></div><div class="curr-card-body"><div class="curr-card-header"><div style="min-width:0;flex:1;"><h4 class="m-0" style="word-break:break-word;">${c.title}</h4><div class="curr-meta"><span><i data-lucide="book-open" size="12"></i> ${c.subject}</span><span><i data-lucide="layers" size="12"></i> Sem ${c.semester}</span><span><i data-lucide="calendar" size="12"></i> ${date}</span><span><i data-lucide="user" size="12"></i> ${c.uploadedByName||"Faculty"}</span><span class="curr-type-badge">${c.resourceType||"link"}</span></div></div><div class="curr-card-actions"><a href="${c.resourceLink}" target="_blank" rel="noopener noreferrer" class="curr-btn curr-btn-view"><i data-lucide="external-link" size="14"></i> Open</a><button class="curr-btn curr-btn-del" onclick="deleteCurriculumItem('${c.id}')"><i data-lucide="trash-2" size="14"></i></button></div></div>${c.description?`<p class="curr-desc">${c.description}</p>`:""}<div class="curr-tags">${tagHTML}</div></div></div>`;
+      container.innerHTML+=`<div class="curr-card animate-in" id="curr-${c.id}"><div class="curr-card-left"><div class="curr-icon-box ${iconInfo.cls}"><i data-lucide="${iconInfo.icon}" size="22"></i></div></div><div class="curr-card-body"><div class="curr-card-header"><div style="min-width:0;flex:1;"><h4 class="m-0" style="word-break:break-word;">${c.title}</h4><div class="curr-meta"><span><i data-lucide="book-open" size="12"></i> ${c.subject}</span><span><i data-lucide="layers" size="12"></i> Sem ${c.semester}</span><span><i data-lucide="calendar" size="12"></i> ${date}</span><span class="curr-type-badge">${c.resourceType||"link"}</span></div></div><div class="curr-card-actions"><a href="${c.resourceLink}" target="_blank" class="curr-btn curr-btn-view"><i data-lucide="external-link" size="14"></i> Open</a><button class="curr-btn curr-btn-del" onclick="deleteCurriculumItem('${c.id}')"><i data-lucide="trash-2" size="14"></i></button></div></div>${c.description?`<p class="curr-desc">${c.description}</p>`:""}<div class="curr-tags">${tagHTML}</div></div></div>`;
     });
     lucide.createIcons();
   } catch(err){console.error(err);container.innerHTML="<p class='empty-msg' style='color:var(--red)'>Failed to load curriculum.</p>";}
@@ -409,6 +411,466 @@ window.deleteCurriculumItem = async function(docId){
 window.filterCurriculum = function(){
   const search=document.getElementById("currSearch").value.toLowerCase(),semFilter=document.getElementById("currSemFilter").value,typeFilter=document.getElementById("currTypeFilter").value;
   document.querySelectorAll(".curr-card").forEach(card=>{const id=card.id.replace("curr-",""),item=curriculumItems.find(c=>c.id===id);if(!item)return;const matchSearch=!search||item.title.toLowerCase().includes(search)||item.subject.toLowerCase().includes(search)||(item.description||"").toLowerCase().includes(search)||(item.tags||[]).some(t=>t.toLowerCase().includes(search));const matchSem=!semFilter||item.semester===semFilter;const matchType=!typeFilter||item.resourceType===typeFilter;card.style.display=(matchSearch&&matchSem&&matchType)?"flex":"none";});
+};
+
+/* ================================================================
+   LMS COURSE BUILDER
+   Firestore collection: "lms_courses"
+   {
+     title, subject, semester, department, description, thumbnail,
+     tags[], difficulty, estimatedHours,
+     weeks: [{id,title,lessons:[{id,title,type,url,description,duration}]}],
+     createdBy, createdByName, createdAt, updatedAt, isPublished,
+     totalLessons, totalWeeks
+   }
+================================================================ */
+
+// Switch curriculum sub-tabs
+window.currSwitchTab = function(tab, el) {
+  document.querySelectorAll(".curr-sub-pane").forEach(p => p.style.display="none");
+  document.querySelectorAll(".curr-sub-tab").forEach(t => t.classList.remove("active"));
+  document.getElementById("currPane-"+tab).style.display="block";
+  if(el) el.classList.add("active");
+  if(tab === "materials") loadCurriculum();
+  if(tab === "courses") lmsLoadCourses();
+  lucide.createIcons();
+};
+
+// Init LMS builder (new course)
+window.lmsNewCourse = function() {
+  lmsCourseWeeks = [];
+  lmsEditingCourseId = null;
+  document.getElementById("lmsCourseTitle").value = "";
+  document.getElementById("lmsCourseSubject").value = "";
+  document.getElementById("lmsCourseSemester").value = "";
+  document.getElementById("lmsCourseDesc").value = "";
+  document.getElementById("lmsCourseThumb").value = "";
+  document.getElementById("lmsCourseTags").value = "";
+  document.getElementById("lmsCourseDiff").value = "Beginner";
+  document.getElementById("lmsCourseHours").value = "";
+  lmsRenderWeeks();
+  document.getElementById("lmsCourseBuilderModal").style.display = "flex";
+  lucide.createIcons();
+};
+
+window.lmsCloseCourseBuilder = function() {
+  document.getElementById("lmsCourseBuilderModal").style.display = "none";
+};
+
+// Add a new week
+window.lmsAddWeek = function() {
+  const weekNum = lmsCourseWeeks.length + 1;
+  lmsCourseWeeks.push({
+    id: Date.now(),
+    title: `Week ${weekNum}: Introduction`,
+    lessons: []
+  });
+  lmsRenderWeeks();
+};
+
+// Remove a week
+window.lmsRemoveWeek = function(weekId) {
+  lmsCourseWeeks = lmsCourseWeeks.filter(w => w.id !== weekId);
+  lmsRenderWeeks();
+};
+
+// Add lesson to a week
+window.lmsAddLesson = function(weekId) {
+  const week = lmsCourseWeeks.find(w => w.id === weekId);
+  if (!week) return;
+  week.lessons.push({
+    id: Date.now(),
+    title: "",
+    type: "video",
+    url: "",
+    description: "",
+    duration: ""
+  });
+  lmsRenderWeeks();
+};
+
+// Remove lesson
+window.lmsRemoveLesson = function(weekId, lessonId) {
+  const week = lmsCourseWeeks.find(w => w.id === weekId);
+  if (!week) return;
+  week.lessons = week.lessons.filter(l => l.id !== lessonId);
+  lmsRenderWeeks();
+};
+
+// Sync field changes back into lmsCourseWeeks
+window.lmsSyncField = function(weekId, field, val) {
+  const week = lmsCourseWeeks.find(w => w.id == weekId);
+  if (week && field === "title") week.title = val;
+};
+window.lmsSyncLessonField = function(weekId, lessonId, field, val) {
+  const week = lmsCourseWeeks.find(w => w.id == weekId);
+  if (!week) return;
+  const lesson = week.lessons.find(l => l.id == lessonId);
+  if (lesson) lesson[field] = val;
+};
+
+// Extract YouTube embed URL
+function lmsYtEmbed(url) {
+  try {
+    const u = new URL(url);
+    let vid = u.searchParams.get("v");
+    if (!vid && u.hostname === "youtu.be") vid = u.pathname.slice(1);
+    if (!vid && u.pathname.includes("/embed/")) vid = u.pathname.split("/embed/")[1];
+    return vid ? `https://www.youtube.com/embed/${vid}` : url;
+  } catch { return url; }
+}
+
+function lmsTypeIcon(type) {
+  return {video:"youtube", link:"link", article:"file-text", quiz:"help-circle", assignment:"clipboard-list"}[type] || "link";
+}
+function lmsTypeColor(type) {
+  return {video:"#dc2626", link:"#2563eb", article:"#7c3aed", quiz:"#d97706", assignment:"#059669"}[type] || "#64748b";
+}
+
+function lmsRenderWeeks() {
+  const container = document.getElementById("lmsWeeksContainer");
+  if (lmsCourseWeeks.length === 0) {
+    container.innerHTML = `<div class="lms-empty-weeks"><i data-lucide="layers" size="32"></i><p>No weeks yet. Click "Add Week" to start building your course.</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+  container.innerHTML = lmsCourseWeeks.map((week, wi) => `
+    <div class="lms-week-block" id="lmsweek-${week.id}">
+      <div class="lms-week-header">
+        <div class="lms-week-num">Week ${wi + 1}</div>
+        <input class="lms-week-title-input" value="${week.title}" placeholder="Week title e.g. Introduction to Python"
+          onchange="lmsSyncField(${week.id},'title',this.value)">
+        <button class="lms-week-del-btn" onclick="lmsRemoveWeek(${week.id})" title="Remove week">
+          <i data-lucide="trash-2" size="14"></i>
+        </button>
+      </div>
+      <div class="lms-lessons-list">
+        ${week.lessons.map((lesson, li) => `
+          <div class="lms-lesson-row" id="lmslesson-${lesson.id}">
+            <div class="lms-lesson-num">${li + 1}</div>
+            <div class="lms-lesson-fields">
+              <div class="lms-lesson-row-top">
+                <select class="lms-lesson-type-sel" onchange="lmsSyncLessonField(${week.id},${lesson.id},'type',this.value);lmsRenderWeeks()">
+                  ${["video","link","article","quiz","assignment"].map(t=>`<option value="${t}" ${lesson.type===t?"selected":""}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join("")}
+                </select>
+                <input class="lms-lesson-title" value="${lesson.title}" placeholder="Lesson title"
+                  onchange="lmsSyncLessonField(${week.id},${lesson.id},'title',this.value)">
+                <input class="lms-lesson-dur" value="${lesson.duration}" placeholder="Duration e.g. 12 min"
+                  onchange="lmsSyncLessonField(${week.id},${lesson.id},'duration',this.value)">
+              </div>
+              <div class="lms-lesson-url-row">
+                <div class="lms-lesson-url-icon" style="color:${lmsTypeColor(lesson.type)}">
+                  <i data-lucide="${lmsTypeIcon(lesson.type)}" size="14"></i>
+                </div>
+                <input class="lms-lesson-url" value="${lesson.url}"
+                  placeholder="${lesson.type==='video'?'YouTube URL e.g. https://youtube.com/watch?v=...'
+                    :lesson.type==='article'?'Article / Doc URL'
+                    :lesson.type==='quiz'?'Google Form / Quiz URL'
+                    :lesson.type==='assignment'?'Assignment link'
+                    :'Resource URL'}"
+                  onchange="lmsSyncLessonField(${week.id},${lesson.id},'url',this.value)">
+              </div>
+              <input class="lms-lesson-desc" value="${lesson.description}" placeholder="Short description (optional)"
+                onchange="lmsSyncLessonField(${week.id},${lesson.id},'description',this.value)">
+            </div>
+            <button class="lms-lesson-del" onclick="lmsRemoveLesson(${week.id},${lesson.id})" title="Remove">
+              <i data-lucide="x" size="13"></i>
+            </button>
+          </div>
+        `).join("")}
+        <button class="lms-add-lesson-btn" onclick="lmsAddLesson(${week.id})">
+          <i data-lucide="plus" size="14"></i> Add Lesson
+        </button>
+      </div>
+    </div>
+  `).join("");
+  lucide.createIcons();
+}
+
+// Save / publish course to Firestore
+window.lmsSaveCourse = async function(publish) {
+  const title = document.getElementById("lmsCourseTitle").value.trim();
+  const subject = document.getElementById("lmsCourseSubject").value.trim();
+  const semester = document.getElementById("lmsCourseSemester").value;
+  const desc = document.getElementById("lmsCourseDesc").value.trim();
+  const thumb = document.getElementById("lmsCourseThumb").value.trim();
+  const tagsRaw = document.getElementById("lmsCourseTags").value.trim();
+  const diff = document.getElementById("lmsCourseDiff").value;
+  const hours = document.getElementById("lmsCourseHours").value;
+
+  if (!title || !subject || !semester) return alert("Please fill Title, Subject, and Semester.");
+  if (lmsCourseWeeks.length === 0) return alert("Add at least one week.");
+
+  // Validate each week
+  for (const week of lmsCourseWeeks) {
+    if (!week.title.trim()) return alert(`Please name Week ${lmsCourseWeeks.indexOf(week)+1}.`);
+    for (const lesson of week.lessons) {
+      if (!lesson.title.trim()) return alert(`Fill lesson title in ${week.title}.`);
+      if (!lesson.url.trim()) return alert(`Fill URL for lesson "${lesson.title}".`);
+    }
+  }
+
+  const tags = tagsRaw ? tagsRaw.split(",").map(t => t.trim()).filter(Boolean) : [];
+  const totalLessons = lmsCourseWeeks.reduce((s, w) => s + w.lessons.length, 0);
+
+  // Serialize weeks (strip JS numeric ids for cleaner Firestore storage)
+  const weeksPayload = lmsCourseWeeks.map((week, wi) => ({
+    order: wi,
+    title: week.title,
+    lessons: week.lessons.map((l, li) => ({
+      order: li,
+      title: l.title,
+      type: l.type,
+      url: l.type === "video" ? lmsYtEmbed(l.url) : l.url,
+      rawUrl: l.url,
+      description: l.description,
+      duration: l.duration
+    }))
+  }));
+
+  const payload = {
+    title, subject, semester, department: facultyDept,
+    description: desc, thumbnail: thumb, tags, difficulty: diff,
+    estimatedHours: hours || "—",
+    weeks: weeksPayload,
+    totalLessons,
+    totalWeeks: lmsCourseWeeks.length,
+    isPublished: !!publish,
+    createdBy: facultyUID,
+    createdByName: facultyName,
+    updatedAt: serverTimestamp()
+  };
+
+  const btn = document.getElementById("lmsSaveBtn");
+  btn.disabled = true; btn.innerText = "Saving…";
+
+  try {
+    if (lmsEditingCourseId) {
+      await updateDoc(doc(db, "lms_courses", lmsEditingCourseId), payload);
+    } else {
+      payload.createdAt = serverTimestamp();
+      await addDoc(collection(db, "lms_courses"), payload);
+    }
+    alert(publish ? `Course "${title}" published successfully!` : `Course saved as draft.`);
+    lmsCloseCourseBuilder();
+    lmsLoadCourses();
+  } catch(err) {
+    console.error(err);
+    alert("Error saving course. Check console.");
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Save Draft";
+  }
+};
+
+// Load and display courses
+window.lmsLoadCourses = async function() {
+  const container = document.getElementById("lmsCourseList");
+  container.innerHTML = `<div class="loader">Loading courses…</div>`;
+  try {
+    const snap = await getDocs(query(collection(db, "lms_courses"), where("department", "==", facultyDept)));
+    if (snap.empty) {
+      container.innerHTML = `<div class="lms-courses-empty"><i data-lucide="book-open" size="48"></i><h3>No courses yet</h3><p>Create your first LMS course to get started.</p><button class="action-btn" onclick="lmsNewCourse()"><i data-lucide="plus" size="16"></i> Create Course</button></div>`;
+      lucide.createIcons(); return;
+    }
+    const courses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    courses.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+    container.innerHTML = `<div class="lms-course-grid">${courses.map(c => {
+      const date = c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString("en-IN", {day:"2-digit",month:"short",year:"numeric"}) : "--";
+      const diffColor = {Beginner:"#059669", Intermediate:"#d97706", Advanced:"#dc2626"}[c.difficulty] || "#64748b";
+      const diffBg   = {Beginner:"#d1fae5", Intermediate:"#fef3c7", Advanced:"#fee2e2"}[c.difficulty] || "#f1f5f9";
+      const tagHtml  = (c.tags||[]).map(t=>`<span class="curr-tag">${t}</span>`).join("");
+      return `
+        <div class="lms-course-card animate-in">
+          <div class="lms-course-thumb" style="${c.thumbnail?`background-image:url('${c.thumbnail}');background-size:cover;background-position:center;`:'background:linear-gradient(135deg,#1e3a5f,#2563eb);'}">
+            <div class="lms-course-thumb-overlay">
+              <span class="lms-pub-badge ${c.isPublished?'published':'draft'}">${c.isPublished?'Published':'Draft'}</span>
+            </div>
+          </div>
+          <div class="lms-course-body">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+              <h4 style="margin:0;font-size:15px;font-weight:800;line-height:1.3;">${c.title}</h4>
+              <span style="background:${diffBg};color:${diffColor};font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;flex-shrink:0;">${c.difficulty||"—"}</span>
+            </div>
+            <div class="lms-course-meta">
+              <span><i data-lucide="book" size="11"></i> ${c.subject}</span>
+              <span><i data-lucide="layers" size="11"></i> Sem ${c.semester}</span>
+              <span><i data-lucide="layout-list" size="11"></i> ${c.totalWeeks||0} weeks</span>
+              <span><i data-lucide="play-circle" size="11"></i> ${c.totalLessons||0} lessons</span>
+              <span><i data-lucide="clock" size="11"></i> ${c.estimatedHours} hrs est.</span>
+            </div>
+            ${c.description?`<p class="lms-course-desc">${c.description}</p>`:""}
+            <div class="curr-tags" style="margin-bottom:12px;">${tagHtml}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="curr-btn curr-btn-view" onclick="lmsPreviewCourse('${c.id}')"><i data-lucide="eye" size="13"></i> Preview</button>
+              <button class="curr-btn" style="background:#f0fdf4;color:#15803d;" onclick="lmsEditCourse('${c.id}')"><i data-lucide="edit-3" size="13"></i> Edit</button>
+              <button class="curr-btn" style="background:${c.isPublished?'#fef3c7':'#d1fae5'};color:${c.isPublished?'#92400e':'#065f46'};" onclick="lmsTogglePublish('${c.id}',${c.isPublished})">
+                <i data-lucide="${c.isPublished?'eye-off':'send'}" size="13"></i> ${c.isPublished?'Unpublish':'Publish'}
+              </button>
+              <button class="curr-btn curr-btn-del" onclick="lmsDeleteCourse('${c.id}')"><i data-lucide="trash-2" size="13"></i></button>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:10px;display:flex;align-items:center;gap:4px;">
+              <i data-lucide="calendar" size="11"></i> Created ${date}
+            </div>
+          </div>
+        </div>`;
+    }).join("")}</div>`;
+    lucide.createIcons();
+  } catch(err) {
+    console.error(err);
+    container.innerHTML = `<p class="empty-msg" style="color:var(--red)">Failed to load courses.</p>`;
+  }
+};
+
+// Edit existing course
+window.lmsEditCourse = async function(id) {
+  const snap = await getDoc(doc(db, "lms_courses", id));
+  if (!snap.exists()) return alert("Course not found.");
+  const c = snap.data();
+  lmsEditingCourseId = id;
+
+  document.getElementById("lmsCourseTitle").value   = c.title || "";
+  document.getElementById("lmsCourseSubject").value = c.subject || "";
+  document.getElementById("lmsCourseSemester").value = c.semester || "";
+  document.getElementById("lmsCourseDesc").value    = c.description || "";
+  document.getElementById("lmsCourseThumb").value   = c.thumbnail || "";
+  document.getElementById("lmsCourseTags").value    = (c.tags||[]).join(", ");
+  document.getElementById("lmsCourseDiff").value    = c.difficulty || "Beginner";
+  document.getElementById("lmsCourseHours").value   = c.estimatedHours || "";
+
+  // Rebuild lmsCourseWeeks from stored weeks
+  lmsCourseWeeks = (c.weeks || []).map(w => ({
+    id: Date.now() + Math.random(),
+    title: w.title,
+    lessons: (w.lessons || []).map(l => ({
+      id: Date.now() + Math.random(),
+      title: l.title,
+      type: l.type || "video",
+      url: l.rawUrl || l.url,
+      description: l.description || "",
+      duration: l.duration || ""
+    }))
+  }));
+  lmsRenderWeeks();
+  document.getElementById("lmsCourseBuilderModal").style.display = "flex";
+  lucide.createIcons();
+};
+
+// Preview course (full screen modal)
+window.lmsPreviewCourse = async function(id) {
+  const snap = await getDoc(doc(db, "lms_courses", id));
+  if (!snap.exists()) return;
+  const c = snap.data();
+  const modal = document.getElementById("lmsPreviewModal");
+  const body  = document.getElementById("lmsPreviewBody");
+
+  const diffColor = {Beginner:"#059669", Intermediate:"#d97706", Advanced:"#dc2626"}[c.difficulty] || "#64748b";
+  const diffBg    = {Beginner:"#d1fae5", Intermediate:"#fef3c7", Advanced:"#fee2e2"}[c.difficulty] || "#f1f5f9";
+
+  body.innerHTML = `
+    <div class="lms-preview-hero" style="${c.thumbnail?`background-image:url('${c.thumbnail}');background-size:cover;background-position:center;`:``}">
+      <div class="lms-preview-hero-overlay">
+        <div class="lms-preview-hero-content">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <span class="lms-pub-badge ${c.isPublished?'published':'draft'}">${c.isPublished?'Published':'Draft'}</span>
+            <span style="background:${diffBg};color:${diffColor};font-size:11px;font-weight:800;padding:4px 12px;border-radius:20px;">${c.difficulty}</span>
+          </div>
+          <h2 style="margin:0 0 8px;font-size:24px;font-weight:900;color:white;">${c.title}</h2>
+          <div style="color:rgba(255,255,255,0.7);font-size:13px;display:flex;gap:16px;flex-wrap:wrap;">
+            <span>📚 ${c.subject} · Sem ${c.semester}</span>
+            <span>📅 ${c.totalWeeks} weeks · ${c.totalLessons} lessons</span>
+            <span>⏱ ${c.estimatedHours} hrs estimated</span>
+          </div>
+          ${c.description?`<p style="color:rgba(255,255,255,0.8);font-size:14px;margin-top:12px;line-height:1.6;">${c.description}</p>`:""}
+        </div>
+      </div>
+    </div>
+    <div class="lms-preview-content">
+      <div class="lms-preview-sidebar">
+        <div class="lms-preview-toc">
+          <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px;">Course Contents</div>
+          ${(c.weeks||[]).map((w,wi) => `
+            <div class="lms-toc-week">
+              <div class="lms-toc-week-title" onclick="lmsScrollToWeek(${wi})">
+                <span style="font-weight:800;font-size:13px;">Week ${wi+1}</span>
+                <span style="font-size:11px;color:var(--muted);">${w.lessons?.length||0} lessons</span>
+              </div>
+              ${(w.lessons||[]).map((l,li)=>`
+                <div class="lms-toc-lesson" onclick="lmsJumpLesson(${wi},${li})">
+                  <span style="color:${lmsTypeColor(l.type)};"><i data-lucide="${lmsTypeIcon(l.type)}" size="12"></i></span>
+                  <span>${l.title}</span>
+                  ${l.duration?`<span style="font-size:10px;color:var(--muted);margin-left:auto;">${l.duration}</span>`:""}
+                </div>`).join("")}
+            </div>`).join("")}
+        </div>
+      </div>
+      <div class="lms-preview-main" id="lmsPreviewMain">
+        ${(c.weeks||[]).map((w,wi) => `
+          <div class="lms-preview-week" id="lmspweek-${wi}">
+            <div class="lms-preview-week-header">
+              <div class="lms-preview-week-num">Week ${wi+1}</div>
+              <h3 style="margin:0;font-size:17px;font-weight:800;">${w.title}</h3>
+              <span style="font-size:12px;color:var(--muted);">${w.lessons?.length||0} lessons</span>
+            </div>
+            ${(w.lessons||[]).map((l,li) => `
+              <div class="lms-preview-lesson" id="lmspw${wi}l${li}">
+                <div class="lms-lesson-type-bar" style="background:${lmsTypeColor(l.type)};"></div>
+                <div class="lms-preview-lesson-inner">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+                    <div class="lms-lesson-type-badge" style="background:${lmsTypeColor(l.type)}20;color:${lmsTypeColor(l.type)};">
+                      <i data-lucide="${lmsTypeIcon(l.type)}" size="13"></i> ${l.type.charAt(0).toUpperCase()+l.type.slice(1)}
+                    </div>
+                    <h4 style="margin:0;font-size:15px;font-weight:800;">${l.title}</h4>
+                    ${l.duration?`<span style="font-size:12px;color:var(--muted);margin-left:auto;display:flex;align-items:center;gap:4px;"><i data-lucide="clock" size="12"></i>${l.duration}</span>`:""}
+                  </div>
+                  ${l.description?`<p style="font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.6;">${l.description}</p>`:""}
+                  ${l.type === "video" ? `
+                    <div class="lms-embed-wrapper">
+                      <iframe src="${l.url}" frameborder="0" allowfullscreen allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" loading="lazy"></iframe>
+                    </div>` : `
+                    <a href="${l.url}" target="_blank" class="lms-resource-link" style="border-color:${lmsTypeColor(l.type)}20;">
+                      <div style="width:42px;height:42px;border-radius:12px;background:${lmsTypeColor(l.type)}15;color:${lmsTypeColor(l.type)};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                        <i data-lucide="${lmsTypeIcon(l.type)}" size="18"></i>
+                      </div>
+                      <div>
+                        <div style="font-weight:700;font-size:14px;color:var(--text);">Open ${l.type.charAt(0).toUpperCase()+l.type.slice(1)}</div>
+                        <div style="font-size:11px;color:var(--muted);word-break:break-all;margin-top:2px;">${l.url}</div>
+                      </div>
+                      <i data-lucide="external-link" size="16" style="color:var(--muted);margin-left:auto;flex-shrink:0;"></i>
+                    </a>`}
+                </div>
+              </div>`).join("")}
+          </div>`).join("")}
+      </div>
+    </div>`;
+
+  modal.style.display = "flex";
+  lucide.createIcons();
+};
+
+window.lmsScrollToWeek = function(wi) {
+  document.getElementById(`lmspweek-${wi}`)?.scrollIntoView({ behavior:"smooth", block:"start" });
+};
+window.lmsJumpLesson = function(wi, li) {
+  document.getElementById(`lmspw${wi}l${li}`)?.scrollIntoView({ behavior:"smooth", block:"start" });
+};
+window.lmsClosePreview = function() { document.getElementById("lmsPreviewModal").style.display = "none"; };
+
+// Toggle publish state
+window.lmsTogglePublish = async function(id, currentlyPublished) {
+  const newState = !currentlyPublished;
+  await updateDoc(doc(db, "lms_courses", id), { isPublished: newState, updatedAt: serverTimestamp() });
+  await lmsLoadCourses();
+};
+
+// Delete course
+window.lmsDeleteCourse = async function(id) {
+  if (!confirm("Delete this course permanently? This cannot be undone.")) return;
+  try {
+    await deleteDoc(doc(db, "lms_courses", id));
+    await lmsLoadCourses();
+  } catch(err) { console.error(err); alert("Delete failed."); }
 };
 
 /* ================= ASSIGNMENTS ================= */
@@ -482,13 +944,13 @@ window.clearTimetable = function(){if(!confirm("Clear all slot assignments?"))re
 window.saveTimetable = async function(){
   const name=document.getElementById("ttName").value.trim(),semester=document.getElementById("ttSemester").value;
   if(!name||!semester)return alert("Enter timetable name and semester.");
-  if(Object.keys(ttSlots).length===0)return alert("No slots assigned. Fill the timetable first.");
+  if(Object.keys(ttSlots).length===0)return alert("No slots assigned.");
   const slotsPayload={};for(const[key,val]of Object.entries(ttSlots)){const subj=ttSubjects.find(s=>s.id===val.subjectId);if(subj)slotsPayload[key]={subjectName:subj.name,facultyName:subj.faculty,type:subj.type,color:subj.color};}
   const subjectsPayload=ttSubjects.map(s=>({name:s.name,faculty:s.faculty,color:s.color,type:s.type}));
   try{const btn=document.getElementById("ttSaveBtn");btn.disabled=true;btn.innerText="Saving...";
     await addDoc(collection(db,"timetables"),{name,semester,department:facultyDept,createdBy:facultyUID,createdByName:facultyName,slots:slotsPayload,subjects:subjectsPayload,createdAt:serverTimestamp()});
-    alert(`Timetable "${name}" saved successfully!`);btn.disabled=false;btn.innerText="💾 Save & Publish";await loadSavedTimetables();
-  }catch(err){console.error(err);alert("Error saving timetable.");document.getElementById("ttSaveBtn").disabled=false;document.getElementById("ttSaveBtn").innerText="💾 Save & Publish";}
+    alert(`Timetable "${name}" saved!`);btn.disabled=false;btn.innerText="💾 Save & Publish";await loadSavedTimetables();
+  }catch(err){console.error(err);alert("Error saving timetable.");}
 };
 window.loadSavedTimetables = async function(){
   const container=document.getElementById("savedTimetablesList");container.innerHTML=`<div class="loader">Loading...</div>`;
@@ -497,28 +959,25 @@ window.loadSavedTimetables = async function(){
     if(snap.empty){container.innerHTML="<p class='empty-msg'>No timetables saved yet.</p>";return;}
     container.innerHTML="";const docs=snap.docs.sort((a,b)=>(b.data().createdAt?.seconds||0)-(a.data().createdAt?.seconds||0));
     docs.forEach(d=>{const tt=d.data(),tid=d.id,date=tt.createdAt?.toDate?tt.createdAt.toDate().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"--",slotCount=Object.keys(tt.slots||{}).length;
-      container.innerHTML+=`<div class="card list-item h-item animate-in" style="padding:18px 20px;"><div class="item-main"><div class="icon-bg blue"><i data-lucide="calendar-range"></i></div><div class="flex-1"><div class="flex-between"><h4 class="m-0">${tt.name}</h4><span class="badge-blue">Sem ${tt.semester}</span></div><div class="curr-meta"><span><i data-lucide="clock" size="12"></i> ${slotCount} slots filled</span><span><i data-lucide="calendar" size="12"></i> ${date}</span><span><i data-lucide="user" size="12"></i> ${tt.createdByName||"Faculty"}</span></div></div></div><div style="display:flex;gap:8px;flex-shrink:0;"><button class="curr-btn curr-btn-view" onclick="previewSavedTimetable('${tid}')"><i data-lucide="eye" size="14"></i> Preview</button><button class="curr-btn curr-btn-del" onclick="deleteTimetable('${tid}')"><i data-lucide="trash-2" size="14"></i></button></div></div>`;
+      container.innerHTML+=`<div class="card list-item h-item animate-in" style="padding:18px 20px;"><div class="item-main"><div class="icon-bg blue"><i data-lucide="calendar-range"></i></div><div class="flex-1"><div class="flex-between"><h4 class="m-0">${tt.name}</h4><span class="badge-blue">Sem ${tt.semester}</span></div><div class="curr-meta"><span>${slotCount} slots</span><span>${date}</span></div></div></div><div style="display:flex;gap:8px;flex-shrink:0;"><button class="curr-btn curr-btn-view" onclick="previewSavedTimetable('${tid}')"><i data-lucide="eye" size="14"></i> Preview</button><button class="curr-btn curr-btn-del" onclick="deleteTimetable('${tid}')"><i data-lucide="trash-2" size="14"></i></button></div></div>`;
     });
     lucide.createIcons();
-  }catch(err){console.error(err);container.innerHTML="<p class='empty-msg' style='color:var(--red)'>Failed to load timetables.</p>";}
+  }catch(err){console.error(err);container.innerHTML="<p class='empty-msg' style='color:var(--red)'>Failed to load.</p>";}
 };
 window.previewSavedTimetable = async function(id){
-  const snap=await getDoc(doc(db,"timetables",id));if(!snap.exists())return alert("Timetable not found.");
+  const snap=await getDoc(doc(db,"timetables",id));if(!snap.exists())return alert("Not found.");
   const tt=snap.data();document.getElementById("ttPreviewTitle").innerText=tt.name+" — Sem "+tt.semester;
   const tbody=document.getElementById("ttPreviewBody");tbody.innerHTML="";
   TT_DAYS.forEach(day=>{const row=document.createElement("tr");row.innerHTML=`<td class="tt-day-cell">${day}</td>`;TT_PERIODS.forEach(period=>{const key=`${day}_${period}`,slot=tt.slots?.[key],td=document.createElement("td");td.className="tt-slot-cell";if(slot){td.innerHTML=`<div class="tt-slot-filled" style="background:${slot.color}20;border:1.5px solid ${slot.color};color:${slot.color};"><span class="tt-slot-name">${slot.subjectName}</span><span class="tt-slot-type">${slot.type}</span></div>`;}else{td.innerHTML=`<div style="text-align:center;color:#e2e8f0;font-size:18px;">—</div>`;}row.appendChild(td);});tbody.appendChild(row);});
   document.getElementById("ttPreviewModal").style.display="flex";lucide.createIcons();
 };
 window.closeTTPreview = function(){document.getElementById("ttPreviewModal").style.display="none";};
-window.deleteTimetable = async function(id){
-  if(!confirm("Delete this timetable?"))return;
-  try{await deleteDoc(doc(db,"timetables",id));await loadSavedTimetables();}catch(err){console.error(err);alert("Delete failed.");}
-};
+window.deleteTimetable = async function(id){if(!confirm("Delete?"))return;try{await deleteDoc(doc(db,"timetables",id));await loadSavedTimetables();}catch(err){alert("Delete failed.");}};
 
 /* ================= LEAVE MANAGEMENT ================= */
 window.loadLeaveApplications = async function(){
   const container=document.getElementById("leaveContainer"),statusFilt=document.getElementById("leaveStatusFilter").value,batchFilt=document.getElementById("leaveBatchFilter").value.trim().toLowerCase();
-  container.innerHTML=`<div class="loader">Loading applications...</div>`;
+  container.innerHTML=`<div class="loader">Loading...</div>`;
   try{
     const snap=await getDocs(query(collection(db,"leave_applications"),where("department","==",facultyDept)));
     if(snap.empty){container.innerHTML="<p class='empty-msg'>No leave applications found.</p>";return;}
@@ -534,54 +993,31 @@ window.loadLeaveApplications = async function(){
       const appliedDate=app.appliedAt?.toDate?app.appliedAt.toDate().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"--";
       const statusClass=app.status==="Pending"?"leave-pending":app.status==="Approved"?"leave-approved":"leave-rejected";
       const statusIcon=app.status==="Pending"?"clock":app.status==="Approved"?"check-circle":"x-circle";
-      container.innerHTML+=`<div class="leave-card animate-in" id="leave-${app.id}"><div class="leave-card-header"><div class="leave-student-info"><div class="avatar-sm" style="background:var(--accent)">${(app.studentName||"S")[0].toUpperCase()}</div><div><h4 class="m-0">${app.studentName}</h4><div style="font-size:12px;color:var(--muted);margin-top:2px;">PRN: ${app.prn} · Batch: ${app.batch||"--"}</div></div></div><div class="leave-status-badge ${statusClass}"><i data-lucide="${statusIcon}" size="13"></i>${app.status}</div></div><div class="leave-details-grid"><div class="leave-detail-item"><label>Leave Type</label><p class="leave-type-pill ${app.leaveType==="Medical"?"medical":app.leaveType==="Personal"?"personal":"other"}">${app.leaveType}</p></div><div class="leave-detail-item"><label>Duration</label><p><b>${app.days}</b> day${app.days>1?"s":""}</p></div><div class="leave-detail-item"><label>From</label><p>${app.fromDate}</p></div><div class="leave-detail-item"><label>To</label><p>${app.toDate}</p></div><div class="leave-detail-item" style="grid-column:1/-1;"><label>Subjects Missed</label><p>${app.subjects||"--"}</p></div><div class="leave-detail-item" style="grid-column:1/-1;"><label>Reason</label><p>${app.reason}</p></div>${app.documentLink?`<div class="leave-detail-item" style="grid-column:1/-1;"><label>Document</label><a href="${app.documentLink}" target="_blank" class="curr-btn curr-btn-view" style="display:inline-flex;margin-top:4px;"><i data-lucide="external-link" size="13"></i> View Document</a></div>`:""}<div class="leave-detail-item" style="grid-column:1/-1;"><label>Applied On</label><p>${appliedDate}</p></div></div>${app.status!=="Pending"?`${app.facultyNote?`<div class="leave-faculty-note"><i data-lucide="message-square" size="14"></i> <b>Faculty Note:</b> ${app.facultyNote}</div>`:""}`:`<div class="leave-action-area"><textarea id="leaveNote-${app.id}" placeholder="Add a note (optional)..." rows="2"></textarea><div style="display:flex;gap:10px;margin-top:10px;"><button class="action-btn w-100" style="background:var(--green)" onclick="reviewLeave('${app.id}','Approved')"><i data-lucide="check" size="14"></i> Approve</button><button class="action-btn w-100" style="background:var(--red)" onclick="reviewLeave('${app.id}','Rejected')"><i data-lucide="x" size="14"></i> Reject</button></div></div>`}</div>`;
+      container.innerHTML+=`<div class="leave-card animate-in"><div class="leave-card-header"><div class="leave-student-info"><div class="avatar-sm" style="background:var(--accent)">${(app.studentName||"S")[0].toUpperCase()}</div><div><h4 class="m-0">${app.studentName}</h4><div style="font-size:12px;color:var(--muted);margin-top:2px;">PRN: ${app.prn} · Batch: ${app.batch||"--"}</div></div></div><div class="leave-status-badge ${statusClass}"><i data-lucide="${statusIcon}" size="13"></i>${app.status}</div></div><div class="leave-details-grid"><div class="leave-detail-item"><label>Leave Type</label><p>${app.leaveType}</p></div><div class="leave-detail-item"><label>Duration</label><p><b>${app.days}</b> day${app.days>1?"s":""}</p></div><div class="leave-detail-item"><label>From</label><p>${app.fromDate}</p></div><div class="leave-detail-item"><label>To</label><p>${app.toDate}</p></div><div class="leave-detail-item" style="grid-column:1/-1;"><label>Reason</label><p>${app.reason}</p></div></div>${app.status!=="Pending"?"":`<div class="leave-action-area"><textarea id="leaveNote-${app.id}" placeholder="Add a note (optional)..." rows="2"></textarea><div style="display:flex;gap:10px;margin-top:10px;"><button class="action-btn w-100" style="background:var(--green)" onclick="reviewLeave('${app.id}','Approved')"><i data-lucide="check" size="14"></i> Approve</button><button class="action-btn w-100" style="background:var(--red)" onclick="reviewLeave('${app.id}','Rejected')"><i data-lucide="x" size="14"></i> Reject</button></div></div>`}</div>`;
     });
     lucide.createIcons();
-  }catch(err){console.error(err);container.innerHTML="<p class='empty-msg' style='color:var(--red)'>Failed to load applications.</p>";}
+  }catch(err){console.error(err);container.innerHTML="<p class='empty-msg' style='color:var(--red)'>Failed to load.</p>";}
 };
 window.reviewLeave = async function(id,status){
   const note=document.getElementById(`leaveNote-${id}`)?.value?.trim()||"";
-  try{await updateDoc(doc(db,"leave_applications",id),{status,facultyNote:note,reviewedAt:serverTimestamp(),reviewedBy:facultyUID});alert(`Leave ${status} successfully.`);await loadLeaveApplications();}
-  catch(err){console.error(err);alert("Error updating leave status.");}
+  try{await updateDoc(doc(db,"leave_applications",id),{status,facultyNote:note,reviewedAt:serverTimestamp(),reviewedBy:facultyUID});alert(`Leave ${status}.`);await loadLeaveApplications();}
+  catch(err){alert("Error updating leave status.");}
 };
 
-/* =================================================================
-   ATTENDANCE MODULE
-   Firestore Collection: "attendance"
-   Fields per document:
-     date          : string   "YYYY-MM-DD"
-     subject       : string
-     semester      : string
-     batch         : string
-     department    : string
-     markedBy      : string  (facultyUID)
-     markedByName  : string
-     createdAt     : timestamp
-     records       : array   [{ studentId, studentName, prn, status:"P"|"A"|"L" }]
-     stats         : map     { present, absent, leave, total }
-================================================================= */
-let attSessionStudents   = [];   // students loaded for current mark session
-let attSessionRecords    = {};   // { uid: 'P'|'A'|'L' }
-let attAllDocs           = [];   // cached attendance docs for reports
-let attSubjectsList      = [];   // unique subjects from timetables
-
-/* ── Helpers ── */
+/* ================= ATTENDANCE ================= */
 function attFmt(d){ const dt=new Date(d); return dt.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); }
 function attPct(p,t){ return t>0?Math.round(p/t*100):0; }
 function attPctColor(p){ return p>=75?"var(--green)":p>=50?"var(--orange)":"var(--red)"; }
 
-/* ── 1. Init attendance section ── */
 window.initAttendance = async function(){
   await attLoadSubjects();
   await attRefreshStats();
 };
 
 async function attLoadSubjects(){
-  // pull unique subjects from saved timetables for this dept
   const snap=await getDocs(query(collection(db,"timetables"),where("department","==",facultyDept)));
   const subjectSet=new Set();
   snap.forEach(d=>{ const slots=d.data().slots||{}; Object.values(slots).forEach(s=>subjectSet.add(s.subjectName)); });
-  // also from exams
   const eSnap=await getDocs(query(collection(db,"exams"),where("department","==",facultyDept)));
   eSnap.forEach(d=>subjectSet.add(d.data().title));
   attSubjectsList=[...subjectSet].filter(Boolean).sort();
@@ -589,422 +1025,137 @@ async function attLoadSubjects(){
   sel.innerHTML='<option value="">-- Select Subject --</option>'+attSubjectsList.map(s=>`<option value="${s}">${s}</option>`).join("");
 }
 
-/* ── 2. Load students for marking session ── */
 window.attLoadStudentsForMarking = async function(){
-  const subject  = document.getElementById("attSubjectSel").value;
-  const date     = document.getElementById("attDatePick").value;
-  const batch    = document.getElementById("attBatchFilter").value.trim().toLowerCase();
-  const semester = document.getElementById("attSemesterFilter").value;
-
-  if(!subject || !date){ alert("Please select subject and date first."); return; }
-
-  const btn=document.getElementById("attLoadBtn");
-  btn.disabled=true; btn.innerText="Loading…";
-
+  const subject=document.getElementById("attSubjectSel").value,date=document.getElementById("attDatePick").value;
+  const batch=document.getElementById("attBatchFilter").value.trim().toLowerCase();
+  const semester=document.getElementById("attSemesterFilter").value;
+  if(!subject||!date){alert("Please select subject and date first.");return;}
+  const btn=document.getElementById("attLoadBtn");btn.disabled=true;btn.innerText="Loading…";
   try{
-    // Check if attendance already submitted for this date+subject
-    const existing=await getDocs(query(collection(db,"attendance"),
-      where("department","==",facultyDept),
-      where("date","==",date),
-      where("subject","==",subject)
-    ));
+    const existing=await getDocs(query(collection(db,"attendance"),where("department","==",facultyDept),where("date","==",date),where("subject","==",subject)));
     if(!existing.empty){
       const d=existing.docs[0].data();
-      if(!confirm(`Attendance for "${subject}" on ${attFmt(date)} was already marked.\n\nPresent: ${d.stats?.present||0} | Absent: ${d.stats?.absent||0}\n\nDo you want to re-mark and overwrite?`)){
-        btn.disabled=false; btn.innerText="Load Students"; return;
-      }
+      if(!confirm(`Attendance for "${subject}" on ${attFmt(date)} was already marked.\nPresent: ${d.stats?.present||0} | Absent: ${d.stats?.absent||0}\n\nOverwrite?`)){btn.disabled=false;btn.innerText="Load Students";return;}
       document.getElementById("attExistingDocId").value=existing.docs[0].id;
-    } else {
-      document.getElementById("attExistingDocId").value="";
-    }
-
+    }else{document.getElementById("attExistingDocId").value="";}
     const q=query(collection(db,"users"),where("role","==","student"),where("department","==",facultyDept));
     const snap=await getDocs(q);
-    attSessionStudents=[]; attSessionRecords={};
-    snap.forEach(d=>{ const s=d.data(); s.uid=d.id; attSessionStudents.push(s); });
+    attSessionStudents=[];attSessionRecords={};
+    snap.forEach(d=>{const s=d.data();s.uid=d.id;attSessionStudents.push(s);});
     attSessionStudents.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
-
-    // Apply batch/semester filters client-side
     let filtered=attSessionStudents;
-    if(batch)    filtered=filtered.filter(s=>(s.batch||"").toLowerCase().includes(batch));
-    if(semester) filtered=filtered.filter(s=>(s.semester||"")=== semester);
-
-    if(filtered.length===0){ alert("No students found with those filters."); btn.disabled=false; btn.innerText="Load Students"; return; }
-
-    // Default all to Present
-    filtered.forEach(s=>{ attSessionRecords[s.uid]="P"; });
-
-    renderAttMarkingSheet(filtered, subject, date);
+    if(batch)filtered=filtered.filter(s=>(s.batch||"").toLowerCase().includes(batch));
+    if(semester)filtered=filtered.filter(s=>(s.semester||"")===semester);
+    if(filtered.length===0){alert("No students found.");btn.disabled=false;btn.innerText="Load Students";return;}
+    filtered.forEach(s=>{attSessionRecords[s.uid]="P";});
+    renderAttMarkingSheet(filtered,subject,date);
     document.getElementById("attMarkingSection").style.display="block";
     document.getElementById("attMarkingSection").scrollIntoView({behavior:"smooth"});
     lucide.createIcons();
-  }catch(err){ console.error(err); alert("Error loading students."); }
-  finally{ btn.disabled=false; btn.innerText="Load Students"; }
+  }catch(err){console.error(err);alert("Error loading students.");}
+  finally{btn.disabled=false;btn.innerText="Load Students";}
 };
 
-function renderAttMarkingSheet(students, subject, date){
-  const header=document.getElementById("attSheetHeader");
-  header.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;"><div><h3 style="margin:0;font-size:17px;">${subject} — ${attFmt(date)}</h3><small style="color:var(--muted);">${students.length} students loaded · ${facultyDept}</small></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="att-bulk-btn present" onclick="attMarkAll('P')"><i data-lucide="check" size="13"></i> All Present</button><button class="att-bulk-btn absent" onclick="attMarkAll('A')"><i data-lucide="x" size="13"></i> All Absent</button><button class="att-bulk-btn leave" onclick="attMarkAll('L')">🏥 All Leave</button></div></div>`;
-
-  const body=document.getElementById("attStudentRows");
-  body.innerHTML="";
+function renderAttMarkingSheet(students,subject,date){
+  document.getElementById("attSheetHeader").innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;"><div><h3 style="margin:0;font-size:17px;">${subject} — ${attFmt(date)}</h3><small style="color:var(--muted);">${students.length} students · ${facultyDept}</small></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="att-bulk-btn present" onclick="attMarkAll('P')"><i data-lucide="check" size="13"></i> All Present</button><button class="att-bulk-btn absent" onclick="attMarkAll('A')"><i data-lucide="x" size="13"></i> All Absent</button><button class="att-bulk-btn leave" onclick="attMarkAll('L')">🏥 All Leave</button></div></div>`;
+  const body=document.getElementById("attStudentRows");body.innerHTML="";
   students.forEach((s,idx)=>{
-    const row=document.createElement("div");
-    row.className="att-row animate-in";
-    row.id=`att-row-${s.uid}`;
-    row.style.animationDelay=`${idx*0.02}s`;
-    row.innerHTML=`
-      <div class="att-row-left">
-        <div class="att-serial">${idx+1}</div>
-        <div class="avatar-sm att-avatar">${(s.name||"?")[0].toUpperCase()}</div>
-        <div class="att-student-info">
-          <div class="att-name">${s.name}</div>
-          <div class="att-meta">PRN: ${s.prn||"--"} · Batch: ${s.batch||"--"}</div>
-        </div>
-      </div>
-      <div class="att-row-right">
-        <button class="att-btn att-p active-p" id="btn-p-${s.uid}" onclick="attSetStatus('${s.uid}','P')">
-          <i data-lucide="user-check" size="14"></i> Present
-        </button>
-        <button class="att-btn att-a" id="btn-a-${s.uid}" onclick="attSetStatus('${s.uid}','A')">
-          <i data-lucide="user-x" size="14"></i> Absent
-        </button>
-        <button class="att-btn att-l" id="btn-l-${s.uid}" onclick="attSetStatus('${s.uid}','L')">
-          <i data-lucide="stethoscope" size="14"></i> Leave
-        </button>
-      </div>`;
+    const row=document.createElement("div");row.className="att-row animate-in";row.id=`att-row-${s.uid}`;row.style.animationDelay=`${idx*0.02}s`;
+    row.innerHTML=`<div class="att-row-left"><div class="att-serial">${idx+1}</div><div class="avatar-sm att-avatar">${(s.name||"?")[0].toUpperCase()}</div><div class="att-student-info"><div class="att-name">${s.name}</div><div class="att-meta">PRN: ${s.prn||"--"} · Batch: ${s.batch||"--"}</div></div></div><div class="att-row-right"><button class="att-btn att-p active-p" id="btn-p-${s.uid}" onclick="attSetStatus('${s.uid}','P')"><i data-lucide="user-check" size="14"></i> Present</button><button class="att-btn att-a" id="btn-a-${s.uid}" onclick="attSetStatus('${s.uid}','A')"><i data-lucide="user-x" size="14"></i> Absent</button><button class="att-btn att-l" id="btn-l-${s.uid}" onclick="attSetStatus('${s.uid}','L')"><i data-lucide="stethoscope" size="14"></i> Leave</button></div>`;
     body.appendChild(row);
   });
-
-  attUpdateLiveSummary(students);
-  lucide.createIcons();
+  attUpdateLiveSummary(students);lucide.createIcons();
 }
-
-window.attSetStatus = function(uid, status){
+window.attSetStatus = function(uid,status){
   attSessionRecords[uid]=status;
   const row=document.getElementById(`att-row-${uid}`);
-  if(row){
-    row.classList.remove("row-p","row-a","row-l");
-    row.classList.add(`row-${status.toLowerCase()}`);
-  }
-  ["P","A","L"].forEach(s=>{
-    const btn=document.getElementById(`btn-${s.toLowerCase()}-${uid}`);
-    if(btn){ btn.classList.remove(`active-p`,`active-a`,`active-l`); if(s===status) btn.classList.add(`active-${status.toLowerCase()}`); }
-  });
-  // Update summary
-  const students=attSessionStudents.filter(s=>attSessionRecords[s.uid]!==undefined);
-  attUpdateLiveSummary(students);
+  if(row){row.classList.remove("row-p","row-a","row-l");row.classList.add(`row-${status.toLowerCase()}`);}
+  ["P","A","L"].forEach(s=>{const btn=document.getElementById(`btn-${s.toLowerCase()}-${uid}`);if(btn){btn.classList.remove("active-p","active-a","active-l");if(s===status)btn.classList.add(`active-${status.toLowerCase()}`);}});
+  const students=attSessionStudents.filter(s=>attSessionRecords[s.uid]!==undefined);attUpdateLiveSummary(students);
 };
-
-window.attMarkAll = function(status){
-  Object.keys(attSessionRecords).forEach(uid=>attSetStatus(uid,status));
-};
-
+window.attMarkAll = function(status){Object.keys(attSessionRecords).forEach(uid=>attSetStatus(uid,status));};
 function attUpdateLiveSummary(students){
-  const uids=students.map(s=>s.uid);
-  const present=uids.filter(u=>attSessionRecords[u]==="P").length;
-  const absent =uids.filter(u=>attSessionRecords[u]==="A").length;
-  const leave  =uids.filter(u=>attSessionRecords[u]==="L").length;
-  const total  =uids.length;
-  const pct    =attPct(present,total);
-  document.getElementById("attLiveSummary").innerHTML=`
-    <div class="att-live-box">
-      <div class="att-live-chip present-chip"><i data-lucide="check-circle" size="14"></i> Present: <b>${present}</b></div>
-      <div class="att-live-chip absent-chip"><i data-lucide="x-circle" size="14"></i> Absent: <b>${absent}</b></div>
-      <div class="att-live-chip leave-chip"><i data-lucide="stethoscope" size="14"></i> Leave: <b>${leave}</b></div>
-      <div class="att-live-chip total-chip"><i data-lucide="users" size="14"></i> Total: <b>${total}</b></div>
-      <div class="att-live-chip pct-chip" style="background:${pct>=75?"#d1fae5":pct>=50?"#fef3c7":"#fee2e2"};color:${attPctColor(pct)};">
-        <i data-lucide="percent" size="14"></i> Attendance: <b>${pct}%</b>
-      </div>
-    </div>`;
+  const uids=students.map(s=>s.uid);const present=uids.filter(u=>attSessionRecords[u]==="P").length;const absent=uids.filter(u=>attSessionRecords[u]==="A").length;const leave=uids.filter(u=>attSessionRecords[u]==="L").length;const total=uids.length;const pct=attPct(present,total);
+  document.getElementById("attLiveSummary").innerHTML=`<div class="att-live-box"><div class="att-live-chip present-chip"><i data-lucide="check-circle" size="14"></i> Present: <b>${present}</b></div><div class="att-live-chip absent-chip"><i data-lucide="x-circle" size="14"></i> Absent: <b>${absent}</b></div><div class="att-live-chip leave-chip"><i data-lucide="stethoscope" size="14"></i> Leave: <b>${leave}</b></div><div class="att-live-chip total-chip"><i data-lucide="users" size="14"></i> Total: <b>${total}</b></div><div class="att-live-chip pct-chip" style="background:${pct>=75?"#d1fae5":pct>=50?"#fef3c7":"#fee2e2"};color:${attPctColor(pct)};"><i data-lucide="percent" size="14"></i> Attendance: <b>${pct}%</b></div></div>`;
   lucide.createIcons();
 }
-
-/* ── 3. Submit attendance ── */
 window.attSubmit = async function(){
-  const subject  = document.getElementById("attSubjectSel").value;
-  const date     = document.getElementById("attDatePick").value;
-  const semester = document.getElementById("attSemesterFilter").value;
-  const existingId = document.getElementById("attExistingDocId").value;
-
-  const students = attSessionStudents.filter(s=>attSessionRecords[s.uid]!==undefined);
-  if(students.length===0){ alert("No students to submit."); return; }
-
-  const records  = students.map(s=>({ studentId:s.uid, studentName:s.name, prn:s.prn||"", status:attSessionRecords[s.uid]||"A" }));
-  const present  = records.filter(r=>r.status==="P").length;
-  const absent   = records.filter(r=>r.status==="A").length;
-  const leave    = records.filter(r=>r.status==="L").length;
-
-  const payload={
-    date, subject, semester: semester||"", batch: document.getElementById("attBatchFilter").value.trim()||"all",
-    department: facultyDept, markedBy: facultyUID, markedByName: facultyName,
-    records, stats:{ present, absent, leave, total:records.length },
-    createdAt: serverTimestamp()
-  };
-
-  const btn=document.getElementById("attSubmitBtn");
-  btn.disabled=true; btn.innerText="Submitting…";
-
+  const subject=document.getElementById("attSubjectSel").value,date=document.getElementById("attDatePick").value,semester=document.getElementById("attSemesterFilter").value,existingId=document.getElementById("attExistingDocId").value;
+  const students=attSessionStudents.filter(s=>attSessionRecords[s.uid]!==undefined);if(students.length===0){alert("No students to submit.");return;}
+  const records=students.map(s=>({studentId:s.uid,studentName:s.name,prn:s.prn||"",status:attSessionRecords[s.uid]||"A"}));
+  const present=records.filter(r=>r.status==="P").length,absent=records.filter(r=>r.status==="A").length,leave=records.filter(r=>r.status==="L").length;
+  const payload={date,subject,semester:semester||"",batch:document.getElementById("attBatchFilter").value.trim()||"all",department:facultyDept,markedBy:facultyUID,markedByName:facultyName,records,stats:{present,absent,leave,total:records.length},createdAt:serverTimestamp()};
+  const btn=document.getElementById("attSubmitBtn");btn.disabled=true;btn.innerText="Submitting…";
   try{
-    if(existingId){ await setDoc(doc(db,"attendance",existingId),payload); }
-    else           { await addDoc(collection(db,"attendance"),payload); }
+    if(existingId){await setDoc(doc(db,"attendance",existingId),payload);}else{await addDoc(collection(db,"attendance"),payload);}
     alert(`✅ Attendance saved!\nPresent: ${present} | Absent: ${absent} | Leave: ${leave}`);
-    document.getElementById("attMarkingSection").style.display="none";
-    document.getElementById("attBatchFilter").value="";
-    document.getElementById("attSemesterFilter").value="";
-    await attRefreshStats();
-  }catch(err){ console.error(err); alert("Error saving attendance."); }
-  finally{ btn.disabled=false; btn.innerText="Submit Attendance"; }
+    document.getElementById("attMarkingSection").style.display="none";await attRefreshStats();
+  }catch(err){console.error(err);alert("Error saving attendance.");}
+  finally{btn.disabled=false;btn.innerText="Submit Attendance";}
 };
 
-/* ── 4. Report & stats ── */
 window.attRefreshStats = async function(){
-  const container=document.getElementById("attReportContainer");
-  container.innerHTML=`<div class="loader">Loading reports…</div>`;
+  const container=document.getElementById("attReportContainer");container.innerHTML=`<div class="loader">Loading reports…</div>`;
   try{
     const snap=await getDocs(query(collection(db,"attendance"),where("department","==",facultyDept)));
-    attAllDocs=snap.docs.map(d=>({id:d.id,...d.data()}));
-    attAllDocs.sort((a,b)=>b.date?.localeCompare(a.date||"")||0);
-
-    if(attAllDocs.length===0){ container.innerHTML="<p class='empty-msg'>No attendance records found. Start marking!</p>"; return; }
-
-    // Summary KPIs
-    const totalSessions=attAllDocs.length;
-    const totalStudentHits=attAllDocs.reduce((s,d)=>s+(d.stats?.total||0),0);
-    const totalPresent   =attAllDocs.reduce((s,d)=>s+(d.stats?.present||0),0);
-    const overallPct     =attPct(totalPresent,totalStudentHits);
-    const uniqueSubjects =[...new Set(attAllDocs.map(d=>d.subject))].length;
-
-    document.getElementById("attStatKpis").innerHTML=`
-      <div class="att-kpi-grid">
-        <div class="att-kpi blue"><div class="att-kpi-val">${totalSessions}</div><div class="att-kpi-lbl">Sessions Taken</div></div>
-        <div class="att-kpi green"><div class="att-kpi-val">${overallPct}%</div><div class="att-kpi-lbl">Avg Attendance</div></div>
-        <div class="att-kpi orange"><div class="att-kpi-val">${uniqueSubjects}</div><div class="att-kpi-lbl">Subjects Tracked</div></div>
-        <div class="att-kpi purple"><div class="att-kpi-val">${totalStudentHits}</div><div class="att-kpi-lbl">Total Records</div></div>
-      </div>`;
-
-    // Build report table
-    container.innerHTML=`
-      <div style="overflow-x:auto;">
-        <table class="schedule-table" style="min-width:700px;">
-          <thead><tr>
-            <th>Date</th><th>Subject</th><th>Semester</th><th>Batch</th>
-            <th>Present</th><th>Absent</th><th>Leave</th><th>Total</th><th>%</th><th>Actions</th>
-          </tr></thead>
-          <tbody id="attReportRows"></tbody>
-        </table>
-      </div>`;
-
+    attAllDocs=snap.docs.map(d=>({id:d.id,...d.data()}));attAllDocs.sort((a,b)=>b.date?.localeCompare(a.date||"")||0);
+    if(attAllDocs.length===0){container.innerHTML="<p class='empty-msg'>No attendance records found.</p>";return;}
+    const totalSessions=attAllDocs.length,totalStudentHits=attAllDocs.reduce((s,d)=>s+(d.stats?.total||0),0),totalPresent=attAllDocs.reduce((s,d)=>s+(d.stats?.present||0),0),overallPct=attPct(totalPresent,totalStudentHits),uniqueSubjects=[...new Set(attAllDocs.map(d=>d.subject))].length;
+    document.getElementById("attStatKpis").innerHTML=`<div class="att-kpi-grid"><div class="att-kpi blue"><div class="att-kpi-val">${totalSessions}</div><div class="att-kpi-lbl">Sessions Taken</div></div><div class="att-kpi green"><div class="att-kpi-val">${overallPct}%</div><div class="att-kpi-lbl">Avg Attendance</div></div><div class="att-kpi orange"><div class="att-kpi-val">${uniqueSubjects}</div><div class="att-kpi-lbl">Subjects Tracked</div></div><div class="att-kpi purple"><div class="att-kpi-val">${totalStudentHits}</div><div class="att-kpi-lbl">Total Records</div></div></div>`;
+    container.innerHTML=`<div style="overflow-x:auto;"><table class="schedule-table" style="min-width:700px;"><thead><tr><th>Date</th><th>Subject</th><th>Semester</th><th>Present</th><th>Absent</th><th>Leave</th><th>Total</th><th>%</th><th>Actions</th></tr></thead><tbody id="attReportRows"></tbody></table></div>`;
     const tbody=document.getElementById("attReportRows");
-    attAllDocs.forEach(d=>{
-      const pct=attPct(d.stats?.present||0,d.stats?.total||1);
-      const tr=document.createElement("tr");
-      tr.innerHTML=`
-        <td><b>${attFmt(d.date)}</b></td>
-        <td>${d.subject}</td>
-        <td>${d.semester||"--"}</td>
-        <td>${d.batch||"--"}</td>
-        <td style="color:var(--green);font-weight:700;">${d.stats?.present||0}</td>
-        <td style="color:var(--red);font-weight:700;">${d.stats?.absent||0}</td>
-        <td style="color:var(--orange);font-weight:700;">${d.stats?.leave||0}</td>
-        <td style="font-weight:700;">${d.stats?.total||0}</td>
-        <td><span style="font-weight:800;color:${attPctColor(pct)}">${pct}%</span></td>
-        <td>
-          <div style="display:flex;gap:6px;">
-            <button class="curr-btn curr-btn-view" onclick="attViewSession('${d.id}')"><i data-lucide="eye" size="12"></i> View</button>
-            <button class="curr-btn" style="background:#fff1f2;color:var(--red);" onclick="attDeleteSession('${d.id}')"><i data-lucide="trash-2" size="12"></i></button>
-          </div>
-        </td>`;
-      tbody.appendChild(tr);
-    });
+    attAllDocs.forEach(d=>{const pct=attPct(d.stats?.present||0,d.stats?.total||1);const tr=document.createElement("tr");tr.innerHTML=`<td><b>${attFmt(d.date)}</b></td><td>${d.subject}</td><td>${d.semester||"--"}</td><td style="color:var(--green);font-weight:700;">${d.stats?.present||0}</td><td style="color:var(--red);font-weight:700;">${d.stats?.absent||0}</td><td style="color:var(--orange);font-weight:700;">${d.stats?.leave||0}</td><td style="font-weight:700;">${d.stats?.total||0}</td><td><span style="font-weight:800;color:${attPctColor(pct)}">${pct}%</span></td><td><div style="display:flex;gap:6px;"><button class="curr-btn curr-btn-view" onclick="attViewSession('${d.id}')"><i data-lucide="eye" size="12"></i> View</button><button class="curr-btn" style="background:#fff1f2;color:var(--red);" onclick="attDeleteSession('${d.id}')"><i data-lucide="trash-2" size="12"></i></button></div></td>`;tbody.appendChild(tr);});
     lucide.createIcons();
-  }catch(err){ console.error(err); container.innerHTML="<p class='empty-msg' style='color:var(--red)'>Failed to load attendance data.</p>"; }
+  }catch(err){console.error(err);container.innerHTML="<p class='empty-msg' style='color:var(--red)'>Failed to load.</p>";}
 };
 
-/* ── 5. Filter report table ── */
 window.attFilterReport = function(){
-  const subj  = document.getElementById("attReportSubjectFilter").value.toLowerCase();
-  const from  = document.getElementById("attReportFrom").value;
-  const to    = document.getElementById("attReportTo").value;
+  const subj=document.getElementById("attReportSubjectFilter").value.toLowerCase(),from=document.getElementById("attReportFrom").value,to=document.getElementById("attReportTo").value;
   if(!document.getElementById("attReportRows"))return;
-  const rows  = document.getElementById("attReportRows").querySelectorAll("tr");
-  attAllDocs.forEach((d,i)=>{
-    const row=rows[i]; if(!row)return;
-    const matchSubj=!subj||d.subject.toLowerCase().includes(subj);
-    const matchFrom=!from||d.date>=from;
-    const matchTo  =!to  ||d.date<=to;
-    row.style.display=(matchSubj&&matchFrom&&matchTo)?"":"none";
-  });
+  const rows=document.getElementById("attReportRows").querySelectorAll("tr");
+  attAllDocs.forEach((d,i)=>{const row=rows[i];if(!row)return;const matchSubj=!subj||d.subject.toLowerCase().includes(subj);const matchFrom=!from||d.date>=from;const matchTo=!to||d.date<=to;row.style.display=(matchSubj&&matchFrom&&matchTo)?"":"none";});
 };
 
-/* ── 6. View individual session ── */
 window.attViewSession = function(id){
-  const d=attAllDocs.find(x=>x.id===id); if(!d)return;
-  const modal=document.getElementById("attSessionModal");
+  const d=attAllDocs.find(x=>x.id===id);if(!d)return;
   document.getElementById("attSessionModalTitle").innerText=`${d.subject} — ${attFmt(d.date)}`;
   const pct=attPct(d.stats?.present||0,d.stats?.total||1);
-  document.getElementById("attSessionModalBody").innerHTML=`
-    <div class="att-live-box" style="margin-bottom:16px;">
-      <div class="att-live-chip present-chip">Present: <b>${d.stats?.present||0}</b></div>
-      <div class="att-live-chip absent-chip">Absent: <b>${d.stats?.absent||0}</b></div>
-      <div class="att-live-chip leave-chip">Leave: <b>${d.stats?.leave||0}</b></div>
-      <div class="att-live-chip pct-chip" style="background:${pct>=75?"#d1fae5":pct>=50?"#fef3c7":"#fee2e2"};color:${attPctColor(pct)};">Attendance: <b>${pct}%</b></div>
-    </div>
-    <div style="overflow-x:auto;">
-      <table class="schedule-table">
-        <thead><tr><th>#</th><th>Name</th><th>PRN</th><th>Status</th></tr></thead>
-        <tbody>${(d.records||[]).map((r,i)=>`<tr><td>${i+1}</td><td>${r.studentName}</td><td>${r.prn}</td><td><span class="att-status-badge ${r.status==="P"?"badge-p":r.status==="A"?"badge-a":"badge-l"}">${r.status==="P"?"Present":r.status==="A"?"Absent":"Leave"}</span></td></tr>`).join("")}</tbody>
-      </table>
-    </div>`;
-  modal.style.display="flex"; lucide.createIcons();
+  document.getElementById("attSessionModalBody").innerHTML=`<div class="att-live-box" style="margin-bottom:16px;"><div class="att-live-chip present-chip">Present: <b>${d.stats?.present||0}</b></div><div class="att-live-chip absent-chip">Absent: <b>${d.stats?.absent||0}</b></div><div class="att-live-chip leave-chip">Leave: <b>${d.stats?.leave||0}</b></div><div class="att-live-chip pct-chip" style="background:${pct>=75?"#d1fae5":pct>=50?"#fef3c7":"#fee2e2"};color:${attPctColor(pct)};">Attendance: <b>${pct}%</b></div></div><div style="overflow-x:auto;"><table class="schedule-table"><thead><tr><th>#</th><th>Name</th><th>PRN</th><th>Status</th></tr></thead><tbody>${(d.records||[]).map((r,i)=>`<tr><td>${i+1}</td><td>${r.studentName}</td><td>${r.prn}</td><td><span class="att-status-badge ${r.status==="P"?"badge-p":r.status==="A"?"badge-a":"badge-l"}">${r.status==="P"?"Present":r.status==="A"?"Absent":"Leave"}</span></td></tr>`).join("")}</tbody></table></div>`;
+  document.getElementById("attSessionModal").style.display="flex";lucide.createIcons();
 };
 window.attCloseSessionModal = function(){ document.getElementById("attSessionModal").style.display="none"; };
+window.attDeleteSession = async function(id){if(!confirm("Delete this attendance record?"))return;try{await deleteDoc(doc(db,"attendance",id));await attRefreshStats();}catch(err){alert("Delete failed.");}};
 
-/* ── 7. Delete session ── */
-window.attDeleteSession = async function(id){
-  if(!confirm("Delete this attendance record permanently?"))return;
-  try{ await deleteDoc(doc(db,"attendance",id)); await attRefreshStats(); }
-  catch(err){ console.error(err); alert("Delete failed."); }
-};
-
-/* ── 8. Student-wise report ── */
 window.attStudentReport = async function(){
-  const container=document.getElementById("attStudentReportBody");
-  container.innerHTML=`<div class="loader">Calculating…</div>`;
-  document.getElementById("attStudentReportSection").style.display="block";
-
+  const container=document.getElementById("attStudentReportBody");container.innerHTML=`<div class="loader">Calculating…</div>`;document.getElementById("attStudentReportSection").style.display="block";
   const subjectFilter=document.getElementById("attStudentSubjectFilter").value.toLowerCase();
-
-  // Build per-student map
-  const studentMap={}; // { uid: { name, prn, subjects:{ subj:{ P,A,L } } } }
-  attAllDocs.forEach(doc=>{
-    if(subjectFilter&&!doc.subject.toLowerCase().includes(subjectFilter))return;
-    (doc.records||[]).forEach(r=>{
-      if(!studentMap[r.studentId]) studentMap[r.studentId]={name:r.studentName,prn:r.prn,subjects:{}};
-      if(!studentMap[r.studentId].subjects[doc.subject]) studentMap[r.studentId].subjects[doc.subject]={P:0,A:0,L:0};
-      studentMap[r.studentId].subjects[doc.subject][r.status]=(studentMap[r.studentId].subjects[doc.subject][r.status]||0)+1;
-    });
-  });
-
-  const entries=Object.entries(studentMap);
-  if(entries.length===0){ container.innerHTML="<p class='empty-msg'>No data available.</p>"; return; }
-
-  container.innerHTML=`<div style="overflow-x:auto;">
-    <table class="schedule-table" style="min-width:600px;">
-      <thead><tr><th>#</th><th>Student</th><th>PRN</th><th>Subject</th><th>Present</th><th>Absent</th><th>Leave</th><th>Total</th><th>Attendance %</th><th>Status</th></tr></thead>
-      <tbody id="stuRepRows"></tbody>
-    </table></div>`;
-
-  let rowNum=1;
-  const tbody=document.getElementById("stuRepRows");
-  entries.forEach(([uid,info])=>{
-    Object.entries(info.subjects).forEach(([subj,counts])=>{
-      const total=counts.P+counts.A+counts.L, pct=attPct(counts.P,total);
-      const tr=document.createElement("tr");
-      tr.innerHTML=`<td>${rowNum++}</td><td><b>${info.name}</b></td><td>${info.prn}</td><td>${subj}</td>
-        <td style="color:var(--green);font-weight:700;">${counts.P}</td>
-        <td style="color:var(--red);font-weight:700;">${counts.A}</td>
-        <td style="color:var(--orange);font-weight:700;">${counts.L}</td>
-        <td>${total}</td>
-        <td><span style="font-weight:800;color:${attPctColor(pct)}">${pct}%</span></td>
-        <td><span class="att-status-badge ${pct>=75?"badge-p":pct>=50?"badge-l":"badge-a"}">${pct>=75?"Regular":pct>=50?"At Risk":"Defaulter"}</span></td>`;
-      tbody.appendChild(tr);
-    });
-  });
+  const studentMap={};
+  attAllDocs.forEach(d=>{if(subjectFilter&&!d.subject.toLowerCase().includes(subjectFilter))return;(d.records||[]).forEach(r=>{if(!studentMap[r.studentId])studentMap[r.studentId]={name:r.studentName,prn:r.prn,subjects:{}};if(!studentMap[r.studentId].subjects[d.subject])studentMap[r.studentId].subjects[d.subject]={P:0,A:0,L:0};studentMap[r.studentId].subjects[d.subject][r.status]++;});});
+  const entries=Object.entries(studentMap);if(entries.length===0){container.innerHTML="<p class='empty-msg'>No data.</p>";return;}
+  container.innerHTML=`<div style="overflow-x:auto;"><table class="schedule-table" style="min-width:600px;"><thead><tr><th>#</th><th>Student</th><th>PRN</th><th>Subject</th><th>Present</th><th>Absent</th><th>Leave</th><th>Total</th><th>%</th><th>Status</th></tr></thead><tbody id="stuRepRows"></tbody></table></div>`;
+  let rowNum=1;const tbody=document.getElementById("stuRepRows");
+  entries.forEach(([uid,info])=>{Object.entries(info.subjects).forEach(([subj,counts])=>{const total=counts.P+counts.A+counts.L,pct=attPct(counts.P,total);const tr=document.createElement("tr");tr.innerHTML=`<td>${rowNum++}</td><td><b>${info.name}</b></td><td>${info.prn}</td><td>${subj}</td><td style="color:var(--green);font-weight:700;">${counts.P}</td><td style="color:var(--red);font-weight:700;">${counts.A}</td><td style="color:var(--orange);font-weight:700;">${counts.L}</td><td>${total}</td><td><span style="font-weight:800;color:${attPctColor(pct)}">${pct}%</span></td><td><span class="att-status-badge ${pct>=75?"badge-p":pct>=50?"badge-l":"badge-a"}">${pct>=75?"Regular":pct>=50?"At Risk":"Defaulter"}</span></td>`;tbody.appendChild(tr);});});
   lucide.createIcons();
 };
 
-/* ── 9. Excel Export ── */
 window.attExportExcel = function(type){
-  if(!window.XLSX){ alert("XLSX library not loaded yet. Please wait."); return; }
+  if(!window.XLSX){alert("XLSX library not loaded.");return;}
   const wb=XLSX.utils.book_new();
-
-  if(type==="sessions"){
-    const headers=["Date","Subject","Semester","Batch","Present","Absent","Leave","Total","Attendance %"];
-    const rows=attAllDocs.map(d=>[
-      d.date, d.subject, d.semester||"", d.batch||"",
-      d.stats?.present||0, d.stats?.absent||0, d.stats?.leave||0, d.stats?.total||0,
-      attPct(d.stats?.present||0,d.stats?.total||1)+"%"
-    ]);
-    const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
-    ws["!cols"]=[{wch:14},{wch:22},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10},{wch:8},{wch:14}];
-    // Style header row
-    headers.forEach((_,i)=>{const cell=ws[XLSX.utils.encode_cell({r:0,c:i})];if(cell)cell.s={font:{bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1E3A5F"}},alignment:{horizontal:"center"}};});
-    XLSX.utils.book_append_sheet(wb,ws,"Session Summary");
-  }
-
-  if(type==="detailed"){
-    attAllDocs.forEach(d=>{
-      const sheetName=(d.subject+" "+d.date).substring(0,31).replace(/[/:?*[\]\\]/g,"");
-      const headers=["#","Student Name","PRN","Status","Date","Subject"];
-      const rows=(d.records||[]).map((r,i)=>[i+1,r.studentName,r.prn,r.status==="P"?"Present":r.status==="A"?"Absent":"Leave",d.date,d.subject]);
-      const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
-      ws["!cols"]=[{wch:5},{wch:25},{wch:15},{wch:10},{wch:14},{wch:22}];
-      XLSX.utils.book_append_sheet(wb,ws,sheetName);
-    });
-  }
-
-  if(type==="student"){
-    // Build per-student summary
-    const studentMap={};
-    attAllDocs.forEach(doc=>{
-      (doc.records||[]).forEach(r=>{
-        if(!studentMap[r.studentId]) studentMap[r.studentId]={name:r.studentName,prn:r.prn,subjects:{}};
-        if(!studentMap[r.studentId].subjects[doc.subject]) studentMap[r.studentId].subjects[doc.subject]={P:0,A:0,L:0,total:0};
-        studentMap[r.studentId].subjects[doc.subject][r.status]++;
-        studentMap[r.studentId].subjects[doc.subject].total++;
-      });
-    });
-    const headers=["Student Name","PRN","Subject","Present","Absent","Leave","Total Sessions","Attendance %","Status"];
-    const rows=[];
-    Object.values(studentMap).forEach(info=>{
-      Object.entries(info.subjects).forEach(([subj,c])=>{
-        const pct=attPct(c.P,c.total);
-        rows.push([info.name,info.prn,subj,c.P,c.A,c.L,c.total,pct+"%",pct>=75?"Regular":pct>=50?"At Risk":"Defaulter"]);
-      });
-    });
-    const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
-    ws["!cols"]=[{wch:25},{wch:15},{wch:22},{wch:10},{wch:10},{wch:10},{wch:16},{wch:14},{wch:12}];
-    XLSX.utils.book_append_sheet(wb,ws,"Student Summary");
-  }
-
-  const filename=`Attendance_${facultyDept}_${new Date().toISOString().slice(0,10)}.xlsx`;
-  XLSX.writeFile(wb,filename);
+  if(type==="sessions"){const headers=["Date","Subject","Semester","Present","Absent","Leave","Total","Attendance %"];const rows=attAllDocs.map(d=>[d.date,d.subject,d.semester||"",d.stats?.present||0,d.stats?.absent||0,d.stats?.leave||0,d.stats?.total||0,attPct(d.stats?.present||0,d.stats?.total||1)+"%"]);const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);XLSX.utils.book_append_sheet(wb,ws,"Session Summary");}
+  if(type==="student"){const studentMap={};attAllDocs.forEach(d=>{(d.records||[]).forEach(r=>{if(!studentMap[r.studentId])studentMap[r.studentId]={name:r.studentName,prn:r.prn,subjects:{}};if(!studentMap[r.studentId].subjects[d.subject])studentMap[r.studentId].subjects[d.subject]={P:0,A:0,L:0,total:0};studentMap[r.studentId].subjects[d.subject][r.status]++;studentMap[r.studentId].subjects[d.subject].total++;});});const headers=["Student Name","PRN","Subject","Present","Absent","Leave","Total Sessions","Attendance %","Status"];const rows=[];Object.values(studentMap).forEach(info=>{Object.entries(info.subjects).forEach(([subj,c])=>{const pct=attPct(c.P,c.total);rows.push([info.name,info.prn,subj,c.P,c.A,c.L,c.total,pct+"%",pct>=75?"Regular":pct>=50?"At Risk":"Defaulter"]);});});const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);XLSX.utils.book_append_sheet(wb,ws,"Student Summary");}
+  XLSX.writeFile(wb,`Attendance_${facultyDept}_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
-/* ── 10. Defaulters list ── */
 window.attShowDefaulters = function(){
   const threshold=parseInt(document.getElementById("attDefaulterThreshold").value)||75;
   const studentMap={};
-  attAllDocs.forEach(doc=>{
-    (doc.records||[]).forEach(r=>{
-      if(!studentMap[r.studentId]) studentMap[r.studentId]={name:r.studentName,prn:r.prn,subjects:{}};
-      if(!studentMap[r.studentId].subjects[doc.subject]) studentMap[r.studentId].subjects[doc.subject]={P:0,total:0};
-      if(r.status==="P") studentMap[r.studentId].subjects[doc.subject].P++;
-      studentMap[r.studentId].subjects[doc.subject].total++;
-    });
-  });
+  attAllDocs.forEach(doc=>{(doc.records||[]).forEach(r=>{if(!studentMap[r.studentId])studentMap[r.studentId]={name:r.studentName,prn:r.prn,subjects:{}};if(!studentMap[r.studentId].subjects[doc.subject])studentMap[r.studentId].subjects[doc.subject]={P:0,total:0};if(r.status==="P")studentMap[r.studentId].subjects[doc.subject].P++;studentMap[r.studentId].subjects[doc.subject].total++;});});
   const defList=[];
-  Object.entries(studentMap).forEach(([uid,info])=>{
-    Object.entries(info.subjects).forEach(([subj,c])=>{
-      const pct=attPct(c.P,c.total);
-      if(pct<threshold) defList.push({name:info.name,prn:info.prn,subj,pct,p:c.P,total:c.total});
-    });
-  });
+  Object.entries(studentMap).forEach(([uid,info])=>{Object.entries(info.subjects).forEach(([subj,c])=>{const pct=attPct(c.P,c.total);if(pct<threshold)defList.push({name:info.name,prn:info.prn,subj,pct,p:c.P,total:c.total});});});
   defList.sort((a,b)=>a.pct-b.pct);
-
   const container=document.getElementById("attDefaulterList");
-  if(defList.length===0){ container.innerHTML=`<div class="empty-msg">🎉 No defaulters below ${threshold}%!</div>`; return; }
-  container.innerHTML=`
-    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:14px;padding:16px;margin-bottom:14px;">
-      <b style="color:var(--red);">⚠ ${defList.length} defaulter entries below ${threshold}%</b>
-    </div>
-    <div style="overflow-x:auto;">
-      <table class="schedule-table">
-        <thead><tr><th>#</th><th>Student</th><th>PRN</th><th>Subject</th><th>Present</th><th>Total</th><th>%</th></tr></thead>
-        <tbody>${defList.map((d,i)=>`<tr><td>${i+1}</td><td><b>${d.name}</b></td><td>${d.prn}</td><td>${d.subj}</td><td>${d.p}</td><td>${d.total}</td><td><b style="color:${attPctColor(d.pct)}">${d.pct}%</b></td></tr>`).join("")}</tbody>
-      </table>
-    </div>`;
+  if(defList.length===0){container.innerHTML=`<div class="empty-msg">🎉 No defaulters below ${threshold}%!</div>`;return;}
+  container.innerHTML=`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:14px;padding:16px;margin-bottom:14px;"><b style="color:var(--red);">⚠ ${defList.length} defaulter entries below ${threshold}%</b></div><div style="overflow-x:auto;"><table class="schedule-table"><thead><tr><th>#</th><th>Student</th><th>PRN</th><th>Subject</th><th>Present</th><th>Total</th><th>%</th></tr></thead><tbody>${defList.map((d,i)=>`<tr><td>${i+1}</td><td><b>${d.name}</b></td><td>${d.prn}</td><td>${d.subj}</td><td>${d.p}</td><td>${d.total}</td><td><b style="color:${attPctColor(d.pct)}">${d.pct}%</b></td></tr>`).join("")}</tbody></table></div>`;
 };
 
 window.logoutUser = () => signOut(auth).then(() => (location.href = "index.html"));
@@ -1036,15 +1187,14 @@ body{margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:va
 .h-item:hover{transform:translateY(-3px);border-color:var(--accent);box-shadow:0 12px 24px rgba(0,0,0,.05);}
 .clickable{cursor:pointer;}
 .sm-trigger-btn{display:inline-flex;align-items:center;gap:12px;background:var(--primary);color:white;border:none;padding:16px 28px;border-radius:18px;font-weight:700;font-size:15px;font-family:inherit;cursor:pointer;transition:all .25s ease;box-shadow:0 4px 14px rgba(15,23,42,.25);margin-bottom:30px;}
-.sm-trigger-btn:hover{background:var(--accent);transform:translateY(-2px);box-shadow:0 8px 20px rgba(37,99,235,.35);}
+.sm-trigger-btn:hover{background:var(--accent);transform:translateY(-2px);}
 #studentManagementPanel{display:none;animation:slideUp .35s ease;}
 .panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
-.close-panel-btn{background:var(--bg);border:1px solid var(--border);color:var(--muted);padding:8px 16px;border-radius:10px;font-weight:600;font-family:inherit;cursor:pointer;transition:.2s;font-size:13px;}
+.close-panel-btn{background:var(--bg);border:1px solid var(--border);color:var(--muted);padding:8px 16px;border-radius:10px;font-weight:600;font-family:inherit;cursor:pointer;font-size:13px;}
 .close-panel-btn:hover{background:var(--red);color:white;border-color:var(--red);}
-.q-mark-card{background:#fcfdfe;border:1px solid var(--border);border-radius:20px;padding:25px;margin-bottom:20px;transition:.3s;}
-.q-mark-card:hover{border-color:var(--accent);transform:scale(1.01);}
+.q-mark-card{background:#fcfdfe;border:1px solid var(--border);border-radius:20px;padding:25px;margin-bottom:20px;}
 .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-top:20px;}
-.info-group label{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.5px;}
+.info-group label{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);}
 .info-group p{margin:4px 0 0;font-weight:600;font-size:14px;}
 .history-item-card{border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:12px;}
 .history-title{font-weight:700;font-size:15px;}
@@ -1054,7 +1204,7 @@ body{margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:va
 .meta-tag.bad{background:#fee2e2;color:var(--red);}
 .meta-tag.good{background:#d1fae5;color:var(--green);}
 .avatar-sm{width:40px;height:40px;background:var(--accent);color:white;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0;}
-.icon-bg{width:45px;height:45px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
+.icon-bg{width:45px;height:45px;border-radius:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .icon-bg.blue{background:#eff6ff;color:var(--accent);}
 .icon-bg.orange{background:#fff7ed;color:var(--orange);}
 .action-btn{background:var(--accent);color:white;border:none;padding:14px;border-radius:14px;font-weight:700;font-family:inherit;cursor:pointer;transition:.3s;display:inline-flex;align-items:center;justify-content:center;gap:8px;}
@@ -1089,9 +1239,7 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 .btn-icon.red:hover{background:#fee2e2;}
 .preview-item{padding:12px 16px!important;margin-bottom:8px!important;}
 .mcq-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.curr-upload-box{border:2px dashed var(--border);border-radius:20px;padding:28px 30px;background:#fafbfc;margin-bottom:25px;transition:border-color .2s;}
-.curr-upload-box:focus-within{border-color:var(--accent);}
-.curr-label{display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:0;}
+.curr-label{display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
 .curr-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;}
 .curr-form-grid .full{grid-column:1/-1;}
 .curr-filter-bar{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;align-items:center;}
@@ -1117,22 +1265,117 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 .curr-btn-view:hover{background:var(--accent);color:white;}
 .curr-btn-del{background:#fff1f2;color:var(--red);padding:7px 10px;}
 .curr-btn-del:hover{background:var(--red);color:white;}
-@keyframes slideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
-.animate-in{animation:slideUp .35s ease;}
-.loader{text-align:center;padding:30px;color:var(--muted);}
+
+/* ── Curriculum sub-tabs ── */
+.curr-sub-tabs{display:flex;gap:8px;margin-bottom:28px;background:var(--white);padding:7px;border-radius:14px;border:1px solid var(--border);width:fit-content;}
+.curr-sub-tab{padding:10px 22px;border-radius:10px;border:none;background:transparent;font-family:inherit;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:.2s;display:flex;align-items:center;gap:7px;}
+.curr-sub-tab:hover{background:var(--bg);color:var(--text);}
+.curr-sub-tab.active{background:var(--primary);color:white;}
+.curr-sub-pane{animation:slideUp .3s ease;}
+
+/* ── LMS Course Builder ── */
+.lms-builder-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;}
+.lms-course-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px;}
+/* LMS Course Card */
+.lms-course-card{background:var(--white);border:1px solid var(--border);border-radius:22px;overflow:hidden;transition:all .25s;display:flex;flex-direction:column;}
+.lms-course-card:hover{transform:translateY(-4px);box-shadow:0 16px 40px rgba(0,0,0,.1);border-color:var(--accent);}
+.lms-course-thumb{height:140px;background:linear-gradient(135deg,#1e3a5f,#2563eb);position:relative;}
+.lms-course-thumb-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.5),transparent);display:flex;align-items:flex-start;justify-content:flex-end;padding:14px;}
+.lms-pub-badge{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;padding:4px 12px;border-radius:20px;}
+.lms-pub-badge.published{background:rgba(16,185,129,.9);color:white;}
+.lms-pub-badge.draft{background:rgba(100,116,139,.85);color:white;}
+.lms-course-body{padding:20px;flex:1;display:flex;flex-direction:column;}
+.lms-course-meta{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 10px;font-size:11px;color:var(--muted);font-weight:600;}
+.lms-course-meta span{display:flex;align-items:center;gap:4px;}
+.lms-course-desc{font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5;flex:1;}
+.lms-courses-empty{text-align:center;padding:60px 20px;color:var(--muted);}
+.lms-courses-empty h3{margin:16px 0 8px;color:var(--text);}
+
+/* Course Builder Modal */
+.lms-builder-modal{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;z-index:4000;backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;}
+.lms-builder-card{width:100%;max-width:860px;background:white;border-radius:28px;overflow:hidden;animation:slideUp .35s ease;margin:auto;}
+.lms-builder-topbar{background:var(--primary);padding:20px 28px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10;}
+.lms-builder-topbar h2{margin:0;color:white;font-size:18px;}
+.lms-builder-body{padding:28px;}
+.lms-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;}
+.lms-meta-grid .full{grid-column:1/-1;}
+.lms-meta-grid label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;margin-top:14px;}
+.lms-meta-grid input,.lms-meta-grid select,.lms-meta-grid textarea{margin-top:0;}
+
+/* Week builder */
+.lms-weeks-area{margin-top:28px;}
+.lms-weeks-area h4{margin:0 0 16px;font-size:15px;font-weight:800;}
+.lms-empty-weeks{text-align:center;padding:40px 20px;color:var(--muted);border:2px dashed var(--border);border-radius:16px;}
+.lms-empty-weeks i{opacity:.4;}
+.lms-empty-weeks p{margin:12px 0 0;font-size:14px;}
+.lms-week-block{border:1px solid var(--border);border-radius:18px;margin-bottom:16px;overflow:hidden;transition:border-color .2s;}
+.lms-week-block:hover{border-color:#93c5fd;}
+.lms-week-header{background:#f8fafc;padding:14px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);}
+.lms-week-num{background:var(--primary);color:white;font-size:11px;font-weight:800;padding:4px 10px;border-radius:20px;flex-shrink:0;text-transform:uppercase;letter-spacing:.5px;}
+.lms-week-title-input{flex:1;border:1px solid var(--border);border-radius:10px;padding:9px 14px;font-size:14px;font-weight:700;font-family:inherit;background:white;margin:0;}
+.lms-week-title-input:focus{outline:none;border-color:var(--accent);}
+.lms-week-del-btn{background:#fee2e2;border:none;color:var(--red);width:34px;height:34px;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.15s;}
+.lms-week-del-btn:hover{background:var(--red);color:white;}
+.lms-lessons-list{padding:12px 16px 16px;}
+.lms-lesson-row{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:#fafbfc;border:1px solid var(--border);border-radius:14px;margin-bottom:8px;transition:border-color .2s;}
+.lms-lesson-row:hover{border-color:#93c5fd;}
+.lms-lesson-num{background:var(--accent);color:white;font-size:10px;font-weight:800;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:8px;}
+.lms-lesson-fields{flex:1;min-width:0;}
+.lms-lesson-row-top{display:grid;grid-template-columns:120px 1fr 120px;gap:8px;}
+.lms-lesson-type-sel{margin:0;padding:8px 10px;font-size:12px;font-weight:700;border-radius:10px;}
+.lms-lesson-title{margin:0;padding:8px 12px;font-size:13px;border-radius:10px;}
+.lms-lesson-dur{margin:0;padding:8px 10px;font-size:12px;border-radius:10px;}
+.lms-lesson-url-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.lms-lesson-url-icon{width:30px;height:30px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.lms-lesson-url{flex:1;margin:0;padding:8px 12px;font-size:12px;border-radius:10px;}
+.lms-lesson-desc{width:100%;margin:8px 0 0;padding:8px 12px;font-size:12px;border-radius:10px;border:1px solid var(--border);}
+.lms-lesson-del{background:#fee2e2;border:none;color:var(--red);width:28px;height:28px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:6px;transition:.15s;}
+.lms-lesson-del:hover{background:var(--red);color:white;}
+.lms-add-lesson-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:10px;border:1.5px dashed var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;transition:.15s;margin-top:6px;}
+.lms-add-lesson-btn:hover{border-color:var(--accent);color:var(--accent);background:#eff6ff;}
+.lms-add-week-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:14px;border:2px dashed var(--border);background:transparent;color:var(--muted);font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;transition:.2s;margin-bottom:16px;}
+.lms-add-week-btn:hover{border-color:var(--accent);color:var(--accent);background:#eff6ff;}
+.lms-builder-footer{padding:20px 28px;border-top:1px solid var(--border);background:#f8fafc;display:flex;gap:10px;flex-wrap:wrap;}
+
+/* Course Preview Modal */
+.lms-preview-modal{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;z-index:4500;backdrop-filter:blur(8px);align-items:flex-start;justify-content:center;padding:0;overflow-y:auto;}
+.lms-preview-wrap{width:100%;max-width:1100px;margin:auto;background:white;min-height:100vh;}
+.lms-preview-hero{min-height:240px;background:linear-gradient(135deg,#0f172a,#1e3a5f);position:relative;display:flex;align-items:flex-end;}
+.lms-preview-hero-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.8) 0%,rgba(0,0,0,.3) 60%,transparent 100%);display:flex;align-items:flex-end;}
+.lms-preview-hero-content{padding:36px 40px;position:relative;z-index:1;}
+.lms-preview-close{position:fixed;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:white;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;backdrop-filter:blur(4px);z-index:10;transition:.2s;}
+.lms-preview-close:hover{background:var(--red);}
+.lms-preview-content{display:grid;grid-template-columns:280px 1fr;min-height:600px;}
+.lms-preview-sidebar{background:#f8fafc;border-right:1px solid var(--border);padding:24px 20px;position:sticky;top:0;max-height:100vh;overflow-y:auto;}
+.lms-preview-toc{font-size:13px;}
+.lms-toc-week{margin-bottom:12px;}
+.lms-toc-week-title{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:var(--primary);padding:8px 0;cursor:pointer;border-bottom:1px solid var(--border);margin-bottom:6px;}
+.lms-toc-week-title:hover{color:var(--accent);}
+.lms-toc-lesson{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer;color:var(--text);transition:.15s;font-size:12px;}
+.lms-toc-lesson:hover{background:#eff6ff;color:var(--accent);}
+.lms-preview-main{padding:32px 36px;}
+.lms-preview-week{margin-bottom:40px;}
+.lms-preview-week-header{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid var(--border);}
+.lms-preview-week-num{background:var(--primary);color:white;font-size:11px;font-weight:800;padding:5px 12px;border-radius:20px;flex-shrink:0;text-transform:uppercase;letter-spacing:.5px;}
+.lms-preview-lesson{border:1px solid var(--border);border-radius:16px;margin-bottom:16px;overflow:hidden;transition:.2s;}
+.lms-preview-lesson:hover{border-color:#93c5fd;box-shadow:0 4px 16px rgba(37,99,235,.08);}
+.lms-lesson-type-bar{height:3px;}
+.lms-preview-lesson-inner{padding:20px 22px;}
+.lms-lesson-type-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:4px 12px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px;}
+.lms-embed-wrapper{position:relative;padding-bottom:56.25%;height:0;border-radius:12px;overflow:hidden;margin-top:4px;}
+.lms-embed-wrapper iframe{position:absolute;inset:0;width:100%;height:100%;}
+.lms-resource-link{display:flex;align-items:center;gap:14px;padding:16px;border:1.5px solid var(--border);border-radius:14px;text-decoration:none;transition:.2s;margin-top:4px;}
+.lms-resource-link:hover{border-color:var(--accent);background:#f8fbff;}
+
 /* TT */
 .tt-layout{display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start;}
 .tt-subject-form{background:var(--white);border-radius:24px;padding:24px;border:1px solid var(--border);margin-bottom:20px;}
-.tt-subject-form h4{margin:0 0 16px;font-size:16px;}
-.tt-subject-pill{display:flex;justify-content:space-between;align-items:flex-start;background:#f8fafc;border-radius:14px;padding:12px 14px;margin-bottom:10px;border:1px solid var(--border);border-left-width:4px;transition:.2s;}
-.tt-subject-pill:hover{background:#fff;border-color:var(--accent);}
+.tt-subject-pill{display:flex;justify-content:space-between;align-items:flex-start;background:#f8fafc;border-radius:14px;padding:12px 14px;margin-bottom:10px;border:1px solid var(--border);border-left-width:4px;}
 .tt-type-tag{display:inline-block;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:#eff6ff;color:var(--accent);margin-left:6px;text-transform:uppercase;}
 .tt-type-tag.lab{background:#f0fdf4;color:#16a34a;}
 .tt-grid-wrapper{overflow-x:auto;}
 .tt-grid{width:100%;border-collapse:collapse;min-width:700px;}
-.tt-grid thead th{background:var(--primary);color:white;padding:10px 12px;font-size:12px;font-weight:700;text-align:center;letter-spacing:.5px;}
-.tt-grid thead th:first-child{border-radius:14px 0 0 0;}
-.tt-grid thead th:last-child{border-radius:0 14px 0 0;}
+.tt-grid thead th{background:var(--primary);color:white;padding:10px 12px;font-size:12px;font-weight:700;text-align:center;}
 .tt-day-cell{background:#f8fafc;font-weight:700;font-size:13px;color:var(--primary);padding:10px 14px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);white-space:nowrap;}
 .tt-slot-cell{padding:6px;border:1px solid var(--border);min-width:110px;height:72px;vertical-align:middle;}
 .tt-slot-empty{display:flex;align-items:center;justify-content:center;height:100%;border-radius:10px;color:#cbd5e1;cursor:pointer;transition:.2s;}
@@ -1146,8 +1389,6 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 .picker-item{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f8fafc;border-radius:14px;margin-bottom:8px;cursor:pointer;border:1px solid var(--border);border-left-width:4px;transition:.15s;}
 .picker-item:hover{background:#eff6ff;border-color:var(--accent);}
 /* Leave */
-.leave-filter-bar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px;}
-.leave-filter-bar input,.leave-filter-bar select{margin-top:0;}
 .leave-summary-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
 .leave-sum-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:700;}
 .leave-sum-chip.pending{background:#fef3c7;color:#92400e;}
@@ -1163,36 +1404,24 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 .leave-approved{background:#d1fae5;color:#065f46;}
 .leave-rejected{background:#fee2e2;color:#991b1b;}
 .leave-details-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;background:#f8fafc;border-radius:16px;padding:16px;margin-bottom:16px;}
-.leave-detail-item label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;}
+.leave-detail-item label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;}
 .leave-detail-item p{margin:4px 0 0;font-weight:600;font-size:14px;}
-.leave-type-pill{display:inline-block;font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;margin-top:4px;}
-.leave-type-pill.medical{background:#eff6ff;color:var(--accent);}
-.leave-type-pill.personal{background:#faf5ff;color:#7c3aed;}
-.leave-type-pill.other{background:#f0fdf4;color:#16a34a;}
-.leave-faculty-note{background:#eff6ff;border-radius:12px;padding:12px 16px;font-size:13px;color:var(--accent);display:flex;align-items:center;gap:8px;}
 .leave-action-area{border-top:1px solid var(--border);padding-top:16px;}
-.leave-action-area textarea{margin-top:0;border:1px solid var(--border);height:70px;}
-
-/* ==================== ATTENDANCE STYLES ==================== */
-.att-section-header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:24px;}
+/* Attendance */
 .att-config-card{background:var(--white);border-radius:24px;padding:24px;border:1px solid var(--border);margin-bottom:20px;}
 .att-config-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-top:16px;}
-.att-config-grid label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.att-config-grid label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:5px;}
 .att-config-grid input,.att-config-grid select{margin-top:0;}
-
-/* Marking sheet */
 .att-marking-card{background:var(--white);border-radius:24px;border:1px solid var(--border);overflow:hidden;margin-bottom:20px;}
 .att-sheet-header{padding:20px 24px;border-bottom:1px solid var(--border);background:#f8fafc;}
 .att-rows-body{padding:12px 16px;max-height:480px;overflow-y:auto;}
 .att-row{display:flex;justify-content:space-between;align-items:center;padding:12px 10px;border-radius:14px;margin-bottom:8px;border:1px solid var(--border);transition:all .15s;gap:12px;}
-.att-row:hover{border-color:#cbd5e1;background:#f8fafc;}
 .att-row.row-p{background:#f0fdf4;border-color:#86efac;}
 .att-row.row-a{background:#fff5f5;border-color:#fca5a5;}
 .att-row.row-l{background:#fffbeb;border-color:#fcd34d;}
 .att-row-left{display:flex;align-items:center;gap:12px;flex:1;min-width:0;}
 .att-serial{font-size:12px;font-weight:700;color:var(--muted);min-width:24px;text-align:center;}
 .att-avatar{width:34px;height:34px;border-radius:10px;font-size:14px;flex-shrink:0;}
-.att-student-info{min-width:0;}
 .att-name{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .att-meta{font-size:11px;color:var(--muted);margin-top:2px;}
 .att-row-right{display:flex;gap:6px;flex-shrink:0;}
@@ -1204,8 +1433,6 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 .active-p{background:#16a34a!important;color:white!important;border-color:#15803d!important;box-shadow:0 4px 10px rgba(22,163,74,.3);}
 .active-a{background:#dc2626!important;color:white!important;border-color:#b91c1c!important;box-shadow:0 4px 10px rgba(220,38,38,.3);}
 .active-l{background:#d97706!important;color:white!important;border-color:#b45309!important;box-shadow:0 4px 10px rgba(217,119,6,.3);}
-
-/* Bulk buttons */
 .att-bulk-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:10px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;border:none;transition:.15s;}
 .att-bulk-btn.present{background:#d1fae5;color:#065f46;}
 .att-bulk-btn.present:hover{background:#16a34a;color:white;}
@@ -1213,52 +1440,40 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 .att-bulk-btn.absent:hover{background:#dc2626;color:white;}
 .att-bulk-btn.leave{background:#fef3c7;color:#92400e;}
 .att-bulk-btn.leave:hover{background:#d97706;color:white;}
-
-/* Live summary */
 .att-live-box{display:flex;gap:10px;flex-wrap:wrap;padding:14px 20px;background:#f8fafc;border-radius:14px;border:1px solid var(--border);margin-bottom:16px;}
 .att-live-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;font-size:13px;font-weight:700;}
 .present-chip{background:#d1fae5;color:#065f46;}
 .absent-chip{background:#fee2e2;color:#991b1b;}
 .leave-chip{background:#fef3c7;color:#92400e;}
 .total-chip{background:#eff6ff;color:var(--accent);}
-.pct-chip{border-radius:20px;}
-
-/* Submit bar */
 .att-submit-bar{display:flex;gap:12px;align-items:center;padding:16px 20px;border-top:1px solid var(--border);background:#f8fafc;flex-wrap:wrap;}
-
-/* KPIs */
 .att-kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:24px;}
-.att-kpi{background:var(--white);border-radius:20px;padding:20px;border:1px solid var(--border);border-top-width:3px;text-align:center;transition:.2s;}
-.att-kpi:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);}
+.att-kpi{background:var(--white);border-radius:20px;padding:20px;border:1px solid var(--border);border-top-width:3px;text-align:center;}
 .att-kpi.blue{border-top-color:var(--accent);}
 .att-kpi.green{border-top-color:var(--green);}
 .att-kpi.orange{border-top-color:var(--orange);}
 .att-kpi.purple{border-top-color:#7c3aed;}
 .att-kpi-val{font-size:2rem;font-weight:900;color:var(--text);}
 .att-kpi-lbl{font-size:12px;color:var(--muted);font-weight:600;margin-top:4px;}
-
-/* Status badges */
 .att-status-badge{display:inline-block;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;}
 .badge-p{background:#d1fae5;color:#065f46;}
 .badge-a{background:#fee2e2;color:#991b1b;}
 .badge-l{background:#fef3c7;color:#92400e;}
-
-/* Export buttons */
 .att-export-grid{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
 .att-export-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:14px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;border:none;transition:.2s;}
 .att-export-btn.primary{background:var(--accent);color:white;}
 .att-export-btn.secondary{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;}
 .att-export-btn.tertiary{background:#faf5ff;color:#7c3aed;border:1px solid #e9d5ff;}
 .att-export-btn:hover{opacity:.85;transform:translateY(-1px);}
-
-/* Section tabs inside attendance */
 .att-inner-tabs{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;}
 .att-inner-tab{padding:9px 20px;border-radius:20px;border:1px solid var(--border);background:var(--white);font-family:inherit;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:.15s;}
 .att-inner-tab.active{background:var(--primary);color:white;border-color:var(--primary);}
+@keyframes slideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+.animate-in{animation:slideUp .35s ease;}
+.loader{text-align:center;padding:30px;color:var(--muted);}
+@media(max-width:900px){.tt-layout,.resp-grid{grid-template-columns:1fr;}.builder-grid{grid-template-columns:1fr;}.leave-details-grid{grid-template-columns:1fr 1fr;}.curr-form-grid{grid-template-columns:1fr;}.lms-meta-grid{grid-template-columns:1fr;}.lms-lesson-row-top{grid-template-columns:1fr 1fr;}.lms-preview-content{grid-template-columns:1fr;}.att-config-grid{grid-template-columns:1fr;}.att-row-right{flex-wrap:wrap;gap:4px;}}
+@media(max-width:600px){.tabs-container{border-radius:20px;}.tab-item{font-size:12px;padding:10px;}.leave-details-grid{grid-template-columns:1fr;}.lms-course-grid{grid-template-columns:1fr;}.lms-preview-sidebar{display:none;}}
 
-/* Responsive */
-@media(max-width:900px){.tt-layout,.resp-grid{grid-template-columns:1fr;}.builder-grid{grid-template-columns:1fr;}.leave-details-grid{grid-template-columns:1fr 1fr;}.curr-form-grid{grid-template-columns:1fr;}.curr-form-grid .full{grid-column:unset;}.att-config-grid{grid-template-columns:1fr;}.att-row-right{flex-wrap:wrap;gap:4px;}}
-@media(max-width:600px){.tabs-container{border-radius:20px;}.tab-item{font-size:12px;padding:10px 10px;gap:5px;}.leave-details-grid{grid-template-columns:1fr;}.att-row{flex-direction:column;align-items:flex-start;}}
 </style>
 </head>
 <body>
@@ -1290,7 +1505,7 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
   <button class="tab-item" onclick="showSection('assignments');loadAssignments();"><i data-lucide="clipboard-list"></i> Assignments</button>
   <button class="tab-item" onclick="showSection('grievance')"><i data-lucide="alert-circle"></i> Grievance</button>
   <button class="tab-item" onclick="showSection('reevaluation')"><i data-lucide="refresh-cw"></i> Re-Eval</button>
-  <button class="tab-item" onclick="showSection('curriculum');loadCurriculum();"><i data-lucide="book-marked"></i> Curriculum</button>
+  <button class="tab-item" onclick="showSection('curriculum');currSwitchTab('materials',null);"><i data-lucide="book-marked"></i> Curriculum</button>
   <button class="tab-item" onclick="showSection('timetable');initTimetableBuilder();loadSavedTimetables();"><i data-lucide="calendar-range"></i> Timetable</button>
   <button class="tab-item" onclick="showSection('leaves');loadLeaveApplications();"><i data-lucide="calendar-off"></i> Leaves</button>
   <button class="tab-item" onclick="showSection('attendance');initAttendance();"><i data-lucide="check-square"></i> Attendance</button>
@@ -1321,17 +1536,7 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
       <button class="b-type-btn" onclick="switchBuilderType('hallticket')">Hall Tickets</button>
     </div>
     <div id="onlineBuilderArea" class="builder-grid">
-      <div class="card">
-        <h4 style="margin-top:0">Online Exam Setup</h4>
-        <input id="eTitle" placeholder="Exam Name"><input id="eDate" type="date">
-        <label style="display:block;margin-top:15px;font-size:13px;font-weight:600;color:var(--muted)">Duration (Minutes)</label>
-        <input id="eDuration" type="number" min="1" placeholder="e.g. 60">
-        <textarea id="qText" placeholder="Enter Question" rows="2" style="margin-top:20px;"></textarea>
-        <div style="display:flex;gap:10px"><select id="qType" onchange="toggleQuestionType()"><option value="subjective">Subjective</option><option value="mcq">MCQ</option></select><input id="qMaxMarks" type="number" value="5" style="margin-top:0;"></div>
-        <div id="mcqOptionsContainer" style="display:none;margin-top:10px;"><div class="mcq-grid"><input id="opt1" placeholder="Option 1"><input id="opt2" placeholder="Option 2"><input id="opt3" placeholder="Option 3"><input id="opt4" placeholder="Option 4"></div><select id="correctOpt" style="background:#d1fae5"><option value="">Correct Index</option><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option></select></div>
-        <button class="action-btn w-100 mt-20" onclick="addQuestion()">+ Add to Draft</button>
-        <button class="action-btn w-100 mt-20" style="background:var(--primary)" onclick="publishOnlineExam()">🚀 Publish Test</button>
-      </div>
+      <div class="card"><h4 style="margin-top:0">Online Exam Setup</h4><input id="eTitle" placeholder="Exam Name"><input id="eDate" type="date"><textarea id="qText" placeholder="Enter Question" rows="2" style="margin-top:20px;"></textarea><div style="display:flex;gap:10px"><select id="qType" onchange="toggleQuestionType()"><option value="subjective">Subjective</option><option value="mcq">MCQ</option></select><input id="qMaxMarks" type="number" value="5" style="margin-top:0;"></div><div id="mcqOptionsContainer" style="display:none;margin-top:10px;"><div class="mcq-grid"><input id="opt1" placeholder="Option 1"><input id="opt2" placeholder="Option 2"><input id="opt3" placeholder="Option 3"><input id="opt4" placeholder="Option 4"></div><select id="correctOpt" style="background:#d1fae5"><option value="">Correct Index</option><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option></select></div><button class="action-btn w-100 mt-20" onclick="addQuestion()">+ Add to Draft</button><button class="action-btn w-100 mt-20" style="background:var(--primary)" onclick="publishOnlineExam()">🚀 Publish Test</button></div>
       <div class="card" style="background:#f8fafc;border-style:dashed"><h3 style="margin-top:0">Live Preview</h3><div id="livePreview"></div><div class="mt-20" style="font-weight:700;">Total Marks: <span id="runningTotal">0</span></div></div>
     </div>
     <div id="offlineBuilderArea" class="builder-grid" style="display:none">
@@ -1344,14 +1549,13 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 
   <!-- ========== RESULTS ========== -->
   <div id="results" class="section-content">
-    <h3>Result Publisher (UID Based Evaluation)</h3>
+    <h3>Result Publisher</h3>
     <div class="card">
       <label style="font-weight:600;font-size:14px;">Enter Student UID</label>
       <div style="display:flex;gap:10px;margin-top:10px;"><input type="text" id="resStudentUID" placeholder="Enter Student UID" style="margin-top:0;"><button class="action-btn" style="white-space:nowrap;" onclick="searchStudentByUID()">Search</button></div>
       <div id="selectedStudentInfo"></div>
       <label style="font-weight:600;font-size:14px;display:block;margin-top:20px;">Select Subject</label>
       <select id="resExamSelect" disabled onchange="onExamChangeResults();checkIfResultExists();"><option value="">Search UID first</option></select>
-      <label style="font-weight:600;font-size:14px;display:block;margin-top:20px;">Total Questions</label>
       <input type="number" id="resQuestionCount" placeholder="Enter total questions (for offline exams)">
       <button class="action-btn w-100 mt-20" onclick="generateQuestionFields()">Generate Questions</button>
     </div>
@@ -1362,7 +1566,7 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
   <!-- ========== RE-EVALUATION ========== -->
   <div id="reevaluation" class="section-content">
     <h3 class="m-0 mb-20">Re-Evaluation Control Panel</h3>
-    <div class="card"><h4 style="margin-top:0">Pending Requests</h4><div id="reevaluationContainer"><div style="text-align:center;padding:40px;color:var(--muted)">Loading requests...</div></div></div>
+    <div class="card"><h4 style="margin-top:0">Pending Requests</h4><div id="reevaluationContainer"><div style="text-align:center;padding:40px;color:var(--muted)">Loading...</div></div></div>
   </div>
 
   <!-- ========== GRIEVANCE ========== -->
@@ -1373,31 +1577,64 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 
   <!-- ========== CURRICULUM ========== -->
   <div id="curriculum" class="section-content">
-    <div style="margin-bottom:24px;"><h3 style="margin:0 0 4px;">Curriculum Manager</h3><p style="color:var(--muted);font-size:13px;margin:0;" id="currDeptNote">Materials added here are visible only to students in your department.</p></div>
-    <div class="curr-upload-box">
-      <h4 style="margin:0 0 20px;display:flex;align-items:center;gap:10px;"><span style="background:var(--accent);color:white;border-radius:10px;padding:5px 12px;font-size:13px;">+ New</span>Add Resource Material</h4>
-      <div class="curr-form-grid">
-        <div><label class="curr-label">Title *</label><input id="currTitle" placeholder="e.g. Data Structures Notes Unit 3"></div>
-        <div><label class="curr-label">Subject *</label><input id="currSubject" placeholder="e.g. Data Structures"></div>
-        <div><label class="curr-label">Semester *</label><select id="currSemester"><option value="">-- Select Semester --</option><option value="1">Sem 1</option><option value="2">Sem 2</option><option value="3">Sem 3</option><option value="4">Sem 4</option><option value="5">Sem 5</option><option value="6">Sem 6</option><option value="7">Sem 7</option><option value="8">Sem 8</option></select></div>
-        <div><label class="curr-label">Resource Type *</label><select id="currResourceType"><option value="link">General Link</option><option value="youtube">YouTube Video</option><option value="gdrive">Google Drive</option><option value="other">Other</option></select></div>
-        <div class="full"><label class="curr-label">Resource URL *</label><input id="currLink" type="url" placeholder="https://drive.google.com/..."></div>
-        <div><label class="curr-label">Tags (comma separated)</label><input id="currTags" placeholder="e.g. notes, unit-3"></div>
-        <div><label class="curr-label">Description (optional)</label><input id="currDesc" placeholder="Brief description"></div>
+    <div style="margin-bottom:20px;">
+      <h3 style="margin:0 0 4px;">Curriculum Manager</h3>
+      <p style="color:var(--muted);font-size:13px;margin:0;" id="currDeptNote">Materials added here are visible only to students in your department.</p>
+    </div>
+
+    <!-- Sub-tab switcher -->
+    <div class="curr-sub-tabs">
+      <button class="curr-sub-tab active" onclick="currSwitchTab('materials',this)">
+        <i data-lucide="link" size="14"></i> Resource Materials
+      </button>
+      <button class="curr-sub-tab" onclick="currSwitchTab('courses',this)">
+        <i data-lucide="graduation-cap" size="14"></i> LMS Courses
+      </button>
+    </div>
+
+    <!-- ── PANE: MATERIALS ── -->
+    <div id="currPane-materials" class="curr-sub-pane" style="display:block;">
+      <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:20px;padding:24px 28px;margin-bottom:24px;">
+        <h4 style="margin:0 0 18px;display:flex;align-items:center;gap:10px;"><span style="background:var(--accent);color:white;border-radius:10px;padding:5px 12px;font-size:13px;">+ New</span>Add Resource Link</h4>
+        <div class="curr-form-grid">
+          <div><label class="curr-label">Title *</label><input id="currTitle" placeholder="e.g. Data Structures Notes Unit 3"></div>
+          <div><label class="curr-label">Subject *</label><input id="currSubject" placeholder="e.g. Data Structures"></div>
+          <div><label class="curr-label">Semester *</label><select id="currSemester"><option value="">-- Select Semester --</option><option value="1">Sem 1</option><option value="2">Sem 2</option><option value="3">Sem 3</option><option value="4">Sem 4</option><option value="5">Sem 5</option><option value="6">Sem 6</option><option value="7">Sem 7</option><option value="8">Sem 8</option></select></div>
+          <div><label class="curr-label">Resource Type *</label><select id="currResourceType"><option value="link">General Link</option><option value="youtube">YouTube Video</option><option value="gdrive">Google Drive</option><option value="other">Other</option></select></div>
+          <div class="full"><label class="curr-label">Resource URL *</label><input id="currLink" type="url" placeholder="https://..."></div>
+          <div><label class="curr-label">Tags (comma separated)</label><input id="currTags" placeholder="e.g. notes, unit-3"></div>
+          <div><label class="curr-label">Description (optional)</label><input id="currDesc" placeholder="Brief description"></div>
+        </div>
+        <button class="action-btn mt-20" id="currAddBtn" style="padding:14px 32px;font-size:15px;" onclick="addCurriculumMaterial()">Add Material</button>
       </div>
-      <button class="action-btn mt-20" id="currAddBtn" style="padding:14px 32px;font-size:15px;" onclick="addCurriculumMaterial()">Add Material</button>
+      <div class="curr-filter-bar">
+        <input id="currSearch" placeholder="🔍  Search..." oninput="filterCurriculum()" style="margin-top:0;">
+        <select id="currSemFilter" onchange="filterCurriculum()" style="max-width:170px;margin-top:0;"><option value="">All Semesters</option><option value="1">Sem 1</option><option value="2">Sem 2</option><option value="3">Sem 3</option><option value="4">Sem 4</option><option value="5">Sem 5</option><option value="6">Sem 6</option><option value="7">Sem 7</option><option value="8">Sem 8</option></select>
+        <select id="currTypeFilter" onchange="filterCurriculum()" style="max-width:160px;margin-top:0;"><option value="">All Types</option><option value="link">General Link</option><option value="youtube">YouTube</option><option value="gdrive">Google Drive</option><option value="other">Other</option></select>
+      </div>
+      <div id="curriculumList"><div style="text-align:center;padding:50px;color:var(--muted);"><i data-lucide="book-open" size="36"></i><p>Switch to this tab to load materials.</p></div></div>
     </div>
-    <div class="curr-filter-bar">
-      <input id="currSearch" placeholder="🔍  Search title, subject, tag..." oninput="filterCurriculum()" style="margin-top:0;">
-      <select id="currSemFilter" onchange="filterCurriculum()" style="max-width:170px;margin-top:0;"><option value="">All Semesters</option><option value="1">Sem 1</option><option value="2">Sem 2</option><option value="3">Sem 3</option><option value="4">Sem 4</option><option value="5">Sem 5</option><option value="6">Sem 6</option><option value="7">Sem 7</option><option value="8">Sem 8</option></select>
-      <select id="currTypeFilter" onchange="filterCurriculum()" style="max-width:160px;margin-top:0;"><option value="">All Types</option><option value="link">General Link</option><option value="youtube">YouTube</option><option value="gdrive">Google Drive</option><option value="other">Other</option></select>
+
+    <!-- ── PANE: LMS COURSES ── -->
+    <div id="currPane-courses" class="curr-sub-pane" style="display:none;">
+      <div class="lms-builder-header">
+        <div>
+          <h3 style="margin:0 0 4px;font-size:18px;font-weight:900;">Course Builder</h3>
+          <p style="margin:0;font-size:13px;color:var(--muted);">Create structured courses with weeks, lessons, videos and resources. Students can track their progress.</p>
+        </div>
+        <button class="action-btn" onclick="lmsNewCourse()" style="padding:13px 24px;gap:8px;">
+          <i data-lucide="plus" size="16"></i> New Course
+        </button>
+      </div>
+      <div id="lmsCourseList">
+        <div class="loader">Loading courses…</div>
+      </div>
     </div>
-    <div id="curriculumList"><div style="text-align:center;padding:50px;color:var(--muted);"><i data-lucide="book-open" size="36"></i><p>Switch to this tab to load materials.</p></div></div>
   </div>
 
   <!-- ========== ASSIGNMENTS ========== -->
   <div id="assignments" class="section-content">
-    <div style="margin-bottom:24px;"><h3 style="margin:0 0 4px;">Assignment Manager</h3><p style="color:var(--muted);font-size:13px;margin:0;">Post new assignments and submission links for your department.</p></div>
+    <div style="margin-bottom:24px;"><h3 style="margin:0 0 4px;">Assignment Manager</h3><p style="color:var(--muted);font-size:13px;margin:0;">Post new assignments for your department.</p></div>
     <div class="card" style="border:1px solid var(--accent);background:#f0f7ff;">
       <h4 style="margin:0 0 15px;">Create New Assignment</h4>
       <div class="curr-form-grid">
@@ -1405,12 +1642,12 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
         <div><label class="curr-label">Subject *</label><input id="asgnSubject" placeholder="e.g. Advanced Java"></div>
         <div><label class="curr-label">Due Date *</label><input id="asgnDeadline" type="date"></div>
         <div><label class="curr-label">Semester *</label><select id="asgnSemester"><option value="1">Sem 1</option><option value="2">Sem 2</option><option value="3">Sem 3</option><option value="4">Sem 4</option><option value="5">Sem 5</option><option value="6">Sem 6</option><option value="7">Sem 7</option><option value="8">Sem 8</option></select></div>
-        <div class="full"><label class="curr-label">Assignment Link (G-Drive/Doc) *</label><input id="asgnLink" placeholder="https://docs.google.com/..."></div>
+        <div class="full"><label class="curr-label">Assignment Link *</label><input id="asgnLink" placeholder="https://docs.google.com/..."></div>
       </div>
       <button class="action-btn mt-20" onclick="publishAssignment()">🚀 Post Assignment</button>
     </div>
     <h4 class="mt-20">Active Assignments</h4>
-    <div id="assignmentList"><div class="loader">Loading assignments...</div></div>
+    <div id="assignmentList"><div class="loader">Loading...</div></div>
   </div>
 
   <!-- ========== TIMETABLE ========== -->
@@ -1426,7 +1663,6 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
         <div class="tt-action-bar">
           <button class="action-btn" style="background:var(--orange);padding:12px 20px;font-size:13px;" onclick="autoFillTimetable()"><i data-lucide="wand-2" size="15"></i> Auto-Fill</button>
           <button class="action-btn" style="background:var(--red);padding:12px 20px;font-size:13px;" onclick="clearTimetable()"><i data-lucide="trash-2" size="15"></i> Clear All</button>
-          <span style="font-size:12px;color:var(--muted);margin-left:4px;">Click any empty cell to assign a subject.</span>
         </div>
         <div class="tt-grid-wrapper"><table class="tt-grid" id="ttMainGrid"><thead><tr><th style="background:#1e293b;">Day / Time</th><th>9:00</th><th>10:00</th><th>11:00</th><th>12:00</th><th>1:00</th><th>2:00</th><th>3:00</th><th>4:00</th></tr></thead><tbody id="ttGridBody"></tbody></table></div>
       </div>
@@ -1436,159 +1672,80 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 
   <!-- ========== LEAVE MANAGEMENT ========== -->
   <div id="leaves" class="section-content">
-    <div style="margin-bottom:24px;"><h3 style="margin:0 0 4px;">Leave Management</h3><p style="color:var(--muted);font-size:13px;margin:0;">Review and respond to leave applications from your department's students.</p></div>
+    <div style="margin-bottom:24px;"><h3 style="margin:0 0 4px;">Leave Management</h3><p style="color:var(--muted);font-size:13px;margin:0;">Review leave applications from your department.</p></div>
     <div class="card" style="padding:20px 24px;">
-      <div class="leave-filter-bar">
-        <select id="leaveStatusFilter" onchange="loadLeaveApplications()" style="max-width:160px;"><option value="">All Statuses</option><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select>
-        <input id="leaveBatchFilter" placeholder="Filter by batch (e.g. a4)" style="max-width:180px;" oninput="loadLeaveApplications()">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+        <select id="leaveStatusFilter" onchange="loadLeaveApplications()" style="max-width:160px;margin-top:0;"><option value="">All Statuses</option><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select>
+        <input id="leaveBatchFilter" placeholder="Filter by batch" style="max-width:180px;margin-top:0;" oninput="loadLeaveApplications()">
         <button class="curr-btn curr-btn-view" onclick="loadLeaveApplications()"><i data-lucide="refresh-cw" size="13"></i> Refresh</button>
       </div>
       <div id="leaveSummaryBar"></div>
     </div>
-    <div id="leaveContainer"><div class="loader">Loading applications...</div></div>
+    <div id="leaveContainer"><div class="loader">Loading...</div></div>
   </div>
 
   <!-- ========== ATTENDANCE ========== -->
   <div id="attendance" class="section-content">
-    <div class="att-section-header">
-      <div>
-        <h2 style="margin:0;font-size:26px;font-weight:900;">Attendance</h2>
-        <p style="color:var(--muted);font-size:13px;margin:4px 0 0;">Mark, track, and export attendance for your department.</p>
-      </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:24px;">
+      <div><h2 style="margin:0;font-size:26px;font-weight:900;">Attendance</h2><p style="color:var(--muted);font-size:13px;margin:4px 0 0;">Mark, track, and export attendance for your department.</p></div>
     </div>
-
-    <!-- Inner tabs -->
     <div class="att-inner-tabs">
       <button class="att-inner-tab active" onclick="attSwitchTab('mark',this)"><i data-lucide="check-square" size="14"></i> Mark Attendance</button>
       <button class="att-inner-tab" onclick="attSwitchTab('report',this)"><i data-lucide="bar-chart-2" size="14"></i> Attendance Report</button>
       <button class="att-inner-tab" onclick="attSwitchTab('student',this)"><i data-lucide="user" size="14"></i> Student-wise</button>
       <button class="att-inner-tab" onclick="attSwitchTab('defaulters',this)"><i data-lucide="alert-triangle" size="14"></i> Defaulters</button>
     </div>
-
-    <!-- TAB: MARK ATTENDANCE -->
     <div id="attTab-mark" class="att-tab-pane" style="display:block;">
       <div class="att-config-card">
-        <h4 style="margin:0 0 4px;">Session Setup</h4>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 16px;">Configure the class session before loading students.</p>
+        <h4 style="margin:0 0 4px;">Session Setup</h4><p style="color:var(--muted);font-size:13px;margin:0 0 16px;">Configure the class session before loading students.</p>
         <div class="att-config-grid">
-          <div>
-            <label>Subject *</label>
-            <select id="attSubjectSel"><option value="">-- Select Subject --</option></select>
-          </div>
-          <div>
-            <label>Date *</label>
-            <input type="date" id="attDatePick">
-          </div>
-          <div>
-            <label>Filter by Batch</label>
-            <input type="text" id="attBatchFilter" placeholder="e.g. a1, b2 (optional)">
-          </div>
-          <div>
-            <label>Filter by Semester</label>
-            <select id="attSemesterFilter">
-              <option value="">All Semesters</option>
-              <option value="1">Sem 1</option><option value="2">Sem 2</option><option value="3">Sem 3</option><option value="4">Sem 4</option>
-              <option value="5">Sem 5</option><option value="6">Sem 6</option><option value="7">Sem 7</option><option value="8">Sem 8</option>
-            </select>
-          </div>
+          <div><label>Subject *</label><select id="attSubjectSel"><option value="">-- Select Subject --</option></select></div>
+          <div><label>Date *</label><input type="date" id="attDatePick"></div>
+          <div><label>Filter by Batch</label><input type="text" id="attBatchFilter" placeholder="e.g. a1 (optional)"></div>
+          <div><label>Filter by Semester</label><select id="attSemesterFilter"><option value="">All Semesters</option><option value="1">Sem 1</option><option value="2">Sem 2</option><option value="3">Sem 3</option><option value="4">Sem 4</option><option value="5">Sem 5</option><option value="6">Sem 6</option><option value="7">Sem 7</option><option value="8">Sem 8</option></select></div>
         </div>
         <input type="hidden" id="attExistingDocId">
-        <button class="action-btn mt-20" id="attLoadBtn" onclick="attLoadStudentsForMarking()" style="padding:14px 28px;">
-          <i data-lucide="users" size="16"></i> Load Students
-        </button>
+        <button class="action-btn mt-20" id="attLoadBtn" onclick="attLoadStudentsForMarking()" style="padding:14px 28px;"><i data-lucide="users" size="16"></i> Load Students</button>
       </div>
-
-      <!-- Marking Sheet (hidden until loaded) -->
       <div id="attMarkingSection" style="display:none;">
         <div class="att-marking-card">
           <div class="att-sheet-header" id="attSheetHeader"></div>
-          <div style="padding:14px 16px 0;">
-            <div id="attLiveSummary"></div>
-          </div>
+          <div style="padding:14px 16px 0;"><div id="attLiveSummary"></div></div>
           <div class="att-rows-body" id="attStudentRows"></div>
           <div class="att-submit-bar">
-            <button class="action-btn" style="background:var(--green);padding:13px 28px;" id="attSubmitBtn" onclick="attSubmit()">
-              <i data-lucide="save" size="16"></i> Submit Attendance
-            </button>
-            <button class="action-btn" style="background:var(--muted);padding:13px 20px;" onclick="document.getElementById('attMarkingSection').style.display='none'">
-              Cancel
-            </button>
+            <button class="action-btn" style="background:var(--green);padding:13px 28px;" id="attSubmitBtn" onclick="attSubmit()"><i data-lucide="save" size="16"></i> Submit Attendance</button>
+            <button class="action-btn" style="background:var(--muted);padding:13px 20px;" onclick="document.getElementById('attMarkingSection').style.display='none'">Cancel</button>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- TAB: REPORT -->
     <div id="attTab-report" class="att-tab-pane" style="display:none;">
       <div id="attStatKpis"></div>
-
-      <!-- Export buttons -->
       <div class="att-export-grid">
-        <button class="att-export-btn primary" onclick="attExportExcel('sessions')">
-          <i data-lucide="download" size="15"></i> Export Session Summary (.xlsx)
-        </button>
-        <button class="att-export-btn secondary" onclick="attExportExcel('detailed')">
-          <i data-lucide="file-spreadsheet" size="15"></i> Export Detailed (Per-Sheet) (.xlsx)
-        </button>
-        <button class="att-export-btn tertiary" onclick="attExportExcel('student')">
-          <i data-lucide="user-check" size="15"></i> Export Student Summary (.xlsx)
-        </button>
-        <button class="curr-btn curr-btn-view" onclick="attRefreshStats()">
-          <i data-lucide="refresh-cw" size="13"></i> Refresh
-        </button>
+        <button class="att-export-btn primary" onclick="attExportExcel('sessions')"><i data-lucide="download" size="15"></i> Export Session Summary (.xlsx)</button>
+        <button class="att-export-btn secondary" onclick="attExportExcel('student')"><i data-lucide="user-check" size="15"></i> Export Student Summary (.xlsx)</button>
+        <button class="curr-btn curr-btn-view" onclick="attRefreshStats()"><i data-lucide="refresh-cw" size="13"></i> Refresh</button>
       </div>
-
-      <!-- Filters -->
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
         <input id="attReportSubjectFilter" placeholder="Filter by subject…" style="max-width:200px;margin-top:0;" oninput="attFilterReport()">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <label style="font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;">From:</label>
-          <input type="date" id="attReportFrom" style="margin-top:0;max-width:170px;" onchange="attFilterReport()">
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <label style="font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;">To:</label>
-          <input type="date" id="attReportTo" style="margin-top:0;max-width:170px;" onchange="attFilterReport()">
-        </div>
+        <div style="display:flex;align-items:center;gap:8px;"><label style="font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;">From:</label><input type="date" id="attReportFrom" style="margin-top:0;max-width:170px;" onchange="attFilterReport()"></div>
+        <div style="display:flex;align-items:center;gap:8px;"><label style="font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;">To:</label><input type="date" id="attReportTo" style="margin-top:0;max-width:170px;" onchange="attFilterReport()"></div>
       </div>
-
       <div id="attReportContainer"><div class="loader">Loading…</div></div>
     </div>
-
-    <!-- TAB: STUDENT-WISE -->
     <div id="attTab-student" class="att-tab-pane" style="display:none;">
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;">
-        <div style="flex:1;min-width:200px;">
-          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px;">Filter by Subject</label>
-          <input id="attStudentSubjectFilter" placeholder="Leave blank for all subjects" style="margin-top:0;">
-        </div>
-        <button class="action-btn" style="padding:14px 24px;" onclick="attStudentReport()">
-          <i data-lucide="search" size="15"></i> Generate Report
-        </button>
+        <div style="flex:1;min-width:200px;"><label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px;">Filter by Subject</label><input id="attStudentSubjectFilter" placeholder="Leave blank for all subjects" style="margin-top:0;"></div>
+        <button class="action-btn" style="padding:14px 24px;" onclick="attStudentReport()"><i data-lucide="search" size="15"></i> Generate Report</button>
       </div>
-      <div id="attStudentReportSection" style="display:none;">
-        <div id="attStudentReportBody"><div class="loader">Calculating…</div></div>
-        <div style="margin-top:14px;">
-          <button class="att-export-btn primary" onclick="attExportExcel('student')">
-            <i data-lucide="download" size="15"></i> Export Student Summary (.xlsx)
-          </button>
-        </div>
-      </div>
+      <div id="attStudentReportSection" style="display:none;"><div id="attStudentReportBody"><div class="loader">Calculating…</div></div><div style="margin-top:14px;"><button class="att-export-btn primary" onclick="attExportExcel('student')"><i data-lucide="download" size="15"></i> Export (.xlsx)</button></div></div>
     </div>
-
-    <!-- TAB: DEFAULTERS -->
     <div id="attTab-defaulters" class="att-tab-pane" style="display:none;">
       <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:20px;flex-wrap:wrap;">
-        <div>
-          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px;">Threshold %</label>
-          <input type="number" id="attDefaulterThreshold" value="75" min="1" max="100" style="margin-top:0;max-width:120px;">
-        </div>
-        <button class="action-btn" style="padding:14px 24px;background:var(--red);" onclick="attShowDefaulters()">
-          <i data-lucide="alert-triangle" size="15"></i> Show Defaulters
-        </button>
+        <div><label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px;">Threshold %</label><input type="number" id="attDefaulterThreshold" value="75" min="1" max="100" style="margin-top:0;max-width:120px;"></div>
+        <button class="action-btn" style="padding:14px 24px;background:var(--red);" onclick="attShowDefaulters()"><i data-lucide="alert-triangle" size="15"></i> Show Defaulters</button>
       </div>
-      <div id="attDefaulterList">
-        <p style="color:var(--muted);font-size:14px;text-align:center;padding:30px;">Set threshold and click "Show Defaulters".</p>
-      </div>
+      <div id="attDefaulterList"><p style="color:var(--muted);font-size:14px;text-align:center;padding:30px;">Set threshold and click "Show Defaulters".</p></div>
     </div>
   </div>
 
@@ -1602,7 +1759,7 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 <!-- ===== SLOT PICKER MODAL ===== -->
 <div id="slotPickerModal" class="modal-overlay">
   <div class="modal-card" style="max-width:420px;">
-    <div class="flex-between mb-20"><div><h3 style="margin:0;">Assign Subject</h3><p id="pickerSlotLabel" style="color:var(--muted);font-size:13px;margin:6px 0 0;"></p></div><button class="btn-icon" onclick="closeSlotPicker()" style="color:var(--muted);"><i data-lucide="x" size="20"></i></button></div>
+    <div class="flex-between mb-20"><div><h3 style="margin:0;">Assign Subject</h3><p id="pickerSlotLabel" style="color:var(--muted);font-size:13px;margin:6px 0 0;"></p></div><button class="btn-icon" onclick="closeSlotPicker()"><i data-lucide="x" size="20"></i></button></div>
     <input type="hidden" id="pickerSlotKey">
     <div id="pickerSubjectList"></div>
   </div>
@@ -1611,7 +1768,7 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 <!-- ===== TIMETABLE PREVIEW MODAL ===== -->
 <div id="ttPreviewModal" class="modal-overlay">
   <div class="modal-card" style="max-width:960px;width:95vw;">
-    <div class="flex-between mb-20"><h3 id="ttPreviewTitle" style="margin:0;"></h3><button class="btn-icon" onclick="closeTTPreview()" style="color:var(--muted);"><i data-lucide="x" size="20"></i></button></div>
+    <div class="flex-between mb-20"><h3 id="ttPreviewTitle" style="margin:0;"></h3><button class="btn-icon" onclick="closeTTPreview()"><i data-lucide="x" size="20"></i></button></div>
     <div style="overflow-x:auto;"><table class="tt-grid" style="min-width:700px;"><thead><tr><th style="background:#1e293b;">Day / Time</th><th>9:00</th><th>10:00</th><th>11:00</th><th>12:00</th><th>1:00</th><th>2:00</th><th>3:00</th><th>4:00</th></tr></thead><tbody id="ttPreviewBody"></tbody></table></div>
   </div>
 </div>
@@ -1619,32 +1776,121 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
 <!-- ===== ATTENDANCE SESSION MODAL ===== -->
 <div id="attSessionModal" class="modal-overlay">
   <div class="modal-card" style="max-width:680px;">
-    <div class="flex-between mb-20">
-      <h3 id="attSessionModalTitle" style="margin:0;"></h3>
-      <button class="btn-icon" onclick="attCloseSessionModal()" style="color:var(--muted);"><i data-lucide="x" size="20"></i></button>
-    </div>
+    <div class="flex-between mb-20"><h3 id="attSessionModalTitle" style="margin:0;"></h3><button class="btn-icon" onclick="attCloseSessionModal()"><i data-lucide="x" size="20"></i></button></div>
     <div id="attSessionModalBody"></div>
+  </div>
+</div>
+
+<!-- ===== LMS COURSE BUILDER MODAL ===== -->
+<div id="lmsCourseBuilderModal" class="lms-builder-modal">
+  <div class="lms-builder-card">
+    <div class="lms-builder-topbar">
+      <h2><i data-lucide="graduation-cap" size="20" style="margin-right:10px;vertical-align:middle;"></i>Course Builder</h2>
+      <button onclick="lmsCloseCourseBuilder()" style="background:rgba(255,255,255,.12);border:none;color:white;width:36px;height:36px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;">×</button>
+    </div>
+    <div class="lms-builder-body">
+
+      <!-- Course metadata -->
+      <h4 style="margin:0 0 4px;">Course Details</h4>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 18px;">Fill in the course metadata. Students will see this on the course card.</p>
+      <div class="lms-meta-grid">
+        <div>
+          <label>Course Title *</label>
+          <input id="lmsCourseTitle" placeholder="e.g. Python for Data Science">
+        </div>
+        <div>
+          <label>Subject *</label>
+          <input id="lmsCourseSubject" placeholder="e.g. Programming Fundamentals">
+        </div>
+        <div>
+          <label>Semester *</label>
+          <select id="lmsCourseSemester">
+            <option value="">-- Select --</option>
+            <option value="1">Sem 1</option><option value="2">Sem 2</option><option value="3">Sem 3</option><option value="4">Sem 4</option>
+            <option value="5">Sem 5</option><option value="6">Sem 6</option><option value="7">Sem 7</option><option value="8">Sem 8</option>
+          </select>
+        </div>
+        <div>
+          <label>Difficulty</label>
+          <select id="lmsCourseDiff">
+            <option value="Beginner">Beginner</option>
+            <option value="Intermediate">Intermediate</option>
+            <option value="Advanced">Advanced</option>
+          </select>
+        </div>
+        <div>
+          <label>Estimated Hours</label>
+          <input id="lmsCourseHours" placeholder="e.g. 12">
+        </div>
+        <div>
+          <label>Tags (comma separated)</label>
+          <input id="lmsCourseTags" placeholder="e.g. python, ml, beginner">
+        </div>
+        <div class="full">
+          <label>Course Description</label>
+          <textarea id="lmsCourseDesc" rows="2" placeholder="Brief overview of what students will learn..." style="margin-top:0;"></textarea>
+        </div>
+        <div class="full">
+          <label>Thumbnail URL (optional)</label>
+          <input id="lmsCourseThumb" placeholder="https://... (leave blank for default gradient)">
+        </div>
+      </div>
+
+      <!-- Week / Lesson builder -->
+      <div class="lms-weeks-area">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <h4 style="margin:0 0 2px;">Course Structure</h4>
+            <p style="color:var(--muted);font-size:12px;margin:0;">Add weeks, then add lessons inside each week. Each lesson can be a video, link, article, quiz, or assignment.</p>
+          </div>
+          <button class="lms-add-week-btn" onclick="lmsAddWeek()">
+            <i data-lucide="plus" size="16"></i> Add Week
+          </button>
+        </div>
+        <div id="lmsWeeksContainer">
+          <div class="lms-empty-weeks">
+            <i data-lucide="layers" size="32"></i>
+            <p>No weeks yet. Click "Add Week" to start building your course.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="lms-builder-footer">
+      <button class="action-btn" id="lmsSaveBtn" onclick="lmsSaveCourse(false)" style="background:var(--muted);padding:13px 24px;">
+        <i data-lucide="save" size="15"></i> Save Draft
+      </button>
+      <button class="action-btn" onclick="lmsSaveCourse(true)" style="background:var(--green);padding:13px 24px;">
+        <i data-lucide="send" size="15"></i> Save & Publish
+      </button>
+      <button class="action-btn" onclick="lmsCloseCourseBuilder()" style="background:transparent;color:var(--muted);border:1px solid var(--border);">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== LMS COURSE PREVIEW MODAL ===== -->
+<div id="lmsPreviewModal" class="lms-preview-modal">
+  <button class="lms-preview-close" onclick="lmsClosePreview()">×</button>
+  <div class="lms-preview-wrap">
+    <div id="lmsPreviewBody"></div>
   </div>
 </div>
 
 <script>
 lucide.createIcons();
-// Set today's date as default for attendance date picker
 document.addEventListener("DOMContentLoaded", function(){
   const datePick = document.getElementById("attDatePick");
-  if(datePick){ datePick.value = new Date().toISOString().slice(0,10); }
+  if(datePick) datePick.value = new Date().toISOString().slice(0,10);
 });
-
-// Attendance inner tab switching
 window.attSwitchTab = function(tab, el){
   document.querySelectorAll(".att-tab-pane").forEach(p => p.style.display="none");
   document.querySelectorAll(".att-inner-tab").forEach(t => t.classList.remove("active"));
   const pane = document.getElementById("attTab-"+tab);
   if(pane) pane.style.display="block";
-  if(el)   el.classList.add("active");
+  if(el) el.classList.add("active");
   lucide.createIcons();
-  if(tab==="report")     window.attRefreshStats && attRefreshStats();
-  if(tab==="defaulters") document.getElementById("attDefaulterList").innerHTML='<p style="color:var(--muted);font-size:14px;text-align:center;padding:30px;">Set threshold and click "Show Defaulters".</p>';
+  if(tab==="report") window.attRefreshStats && attRefreshStats();
 };
 </script>
 </body>
