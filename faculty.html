@@ -1502,9 +1502,6 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
   <button class="tab-item" onclick="showSection('dashboard')"><i data-lucide="layout-dashboard"></i> Home</button>
   <button class="tab-item" onclick="showSection('exams')"><i data-lucide="plus-circle"></i> Exams</button>
   <button class="tab-item" onclick="showSection('results')"><i data-lucide="award"></i> Results</button>
-  <button class="tab-item" onclick="showSection('assignments');loadAssignments();"><i data-lucide="clipboard-list"></i> Assignments</button>
-  <button class="tab-item" onclick="showSection('grievance')"><i data-lucide="alert-circle"></i> Grievance</button>
-  <button class="tab-item" onclick="showSection('reevaluation')"><i data-lucide="refresh-cw"></i> Re-Eval</button>
   <button class="tab-item" onclick="showSection('curriculum');currSwitchTab('materials',null);"><i data-lucide="book-marked"></i> Curriculum</button>
   <button class="tab-item" onclick="showSection('timetable');initTimetableBuilder();loadSavedTimetables();"><i data-lucide="calendar-range"></i> Timetable</button>
   <button class="tab-item" onclick="showSection('leaves');loadLeaveApplications();"><i data-lucide="calendar-off"></i> Leaves</button>
@@ -1563,18 +1560,6 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
     <button class="action-btn w-100 mt-20" style="background:var(--green)" onclick="publishExamResult()">Publish Result</button>
   </div>
 
-  <!-- ========== RE-EVALUATION ========== -->
-  <div id="reevaluation" class="section-content">
-    <h3 class="m-0 mb-20">Re-Evaluation Control Panel</h3>
-    <div class="card"><h4 style="margin-top:0">Pending Requests</h4><div id="reevaluationContainer"><div style="text-align:center;padding:40px;color:var(--muted)">Loading...</div></div></div>
-  </div>
-
-  <!-- ========== GRIEVANCE ========== -->
-  <div id="grievance" class="section-content">
-    <h3>Resolution Hub</h3>
-    <div id="grievanceContainer"></div>
-  </div>
-
   <!-- ========== CURRICULUM ========== -->
   <div id="curriculum" class="section-content">
     <div style="margin-bottom:20px;">
@@ -1586,9 +1571,6 @@ input,select,textarea{width:100%;padding:14px;margin-top:10px;border-radius:14px
     <div class="curr-sub-tabs">
       <button class="curr-sub-tab active" onclick="currSwitchTab('materials',this)">
         <i data-lucide="link" size="14"></i> Resource Materials
-      </button>
-      <button class="curr-sub-tab" onclick="currSwitchTab('courses',this)">
-        <i data-lucide="graduation-cap" size="14"></i> LMS Courses
       </button>
     </div>
 
