@@ -3,382 +3,529 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MIT Academy · secure login</title>
-    <!-- Font Awesome 6 for crisp icons -->
+    <title>MIT Academy · Secure Login</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
         }
 
         body {
             min-height: 100vh;
-            background: linear-gradient(135deg, #072d44 0%, #124c6b 100%);
             display: flex;
-            align-items: center;
-            justify-content: flex-end; /* card on the right */
-            padding: 2rem;
-            position: relative;
-            overflow-x: hidden;
+            background: #f0f2f5;
         }
 
-        /* sophisticated background with overlay and subtle moving particles */
-        body::before {
-            content: "";
+        /* ── LEFT: campus photo panel ── */
+        .left-panel {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            min-height: 100vh;
+        }
+
+        /* 
+            REPLACE THIS with your actual campus image:
+            background-image: url('your-campus-photo.jpg');
+        */
+        .left-panel .bg-img {
             position: absolute;
             inset: 0;
-            background: 
-                radial-gradient(circle at 20% 30%, rgba(26, 188, 156, 0.15) 0%, transparent 30%),
-                radial-gradient(circle at 90% 70%, rgba(52, 152, 219, 0.12) 0%, transparent 35%),
-                url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" opacity="0.08"><path d="M60 100 L100 40 L140 100 L100 160 Z" fill="white"/><circle cx="100" cy="100" r="20" fill="none" stroke="white" stroke-width="4"/></svg>');
-            background-size: 200px 200px, 200px 200px, auto;
-            pointer-events: none;
-            z-index: 0;
+            background:
+                url('https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/MIT_Building_10_and_the_Great_Dome%2C_Cambridge_MA.jpg/1280px-MIT_Building_10_and_the_Great_Dome%2C_Cambridge_MA.jpg')
+                center center / cover no-repeat;
         }
 
-        /* LEFT HERO SECTION — refined, elegant */
-        .hero-section {
+        /* dark gradient overlay at bottom for the label */
+        .left-panel .bg-img::after {
+            content: '';
             position: absolute;
-            left: 8%;
-            max-width: 600px;
-            color: white;
+            inset: 0;
+            background: linear-gradient(
+                to bottom,
+                rgba(0,0,0,0.05) 0%,
+                rgba(0,0,0,0.08) 60%,
+                rgba(5,25,50,0.72) 100%
+            );
+        }
+
+        /* bottom-left campus name badge (like in screenshot) */
+        .campus-label {
+            position: absolute;
+            bottom: 0;
+            left: 0;
             z-index: 5;
-            text-shadow: 0 10px 20px rgba(0, 15, 25, 0.5);
-            animation: fadeInLeft 1s ease-out;
+            background: #0f2d54;
+            color: #fff;
+            padding: 1rem 1.5rem;
+            min-width: 220px;
         }
 
-        .hero-section h1 {
-            font-size: 3.5rem;
+        .campus-label .badge-title {
+            font-size: 1.6rem;
             font-weight: 700;
-            line-height: 1.2;
-            letter-spacing: -0.02em;
-            background: linear-gradient(to right, #ffffff, #e0f2fe);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 0.8rem;
+            letter-spacing: 0.5px;
+            line-height: 1.1;
         }
 
-        .hero-section .college-badge {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .hero-section .college-badge span {
-            background: rgba(255,255,255,0.15);
-            backdrop-filter: blur(6px);
-            padding: 0.4rem 1.6rem;
-            border-radius: 40px;
-            font-weight: 600;
-            font-size: 1rem;
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-
-        .hero-section p {
-            font-size: 1.3rem;
-            color: rgba(255,255,255,0.85);
-            margin-bottom: 2.5rem;
-            font-weight: 400;
-            max-width: 500px;
-            backdrop-filter: blur(2px);
-        }
-
-        .hero-features {
-            display: flex;
-            gap: 2rem;
-        }
-
-        .hero-features div {
-            display: flex;
-            align-items: center;
-            gap: 0.8rem;
-            background: rgba(0, 0, 0, 0.2);
-            padding: 0.5rem 1.4rem;
-            border-radius: 50px;
-            backdrop-filter: blur(5px);
-            border: 1px solid rgba(255,255,255,0.1);
-            font-weight: 500;
-        }
-
-        .hero-features i {
-            color: #1abc9c;
-            font-size: 1.3rem;
-        }
-
-        /* LOGIN CARD — glassmorphism premium */
-        .login-card {
-            width: 440px;
-            background: rgba(20, 45, 65, 0.5);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            border-radius: 2.5rem;
-            padding: 2.8rem 2.5rem;
-            box-shadow: 0 35px 70px rgba(0, 15, 30, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-            z-index: 10;
-            color: white;
-            margin-right: 5%;
-            animation: fadeInRight 1s ease-out;
-        }
-
-        /* Logo container — refined */
-        .logo-container {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-
-        .logo-wrapper {
-            display: inline-block;
-            background: rgba(255,255,255,0.95);
-            padding: 0.8rem 2rem 0.8rem 2rem;
-            border-radius: 80px;
-            box-shadow: 0 20px 30px -12px #0a1e2c;
-            border: 2px solid rgba(255,255,255,0.7);
-            transition: transform 0.2s;
-        }
-
-        .logo-wrapper:hover {
-            transform: scale(1.02);
-        }
-
-        .logo-wrapper img {
-            height: 70px;
-            width: auto;
-            display: block;
-        }
-
-        .login-card h2 {
-            text-align: center;
-            font-weight: 600;
-            font-size: 2rem;
-            letter-spacing: -0.5px;
-            margin-bottom: 0.5rem;
-            background: linear-gradient(145deg, #ffffff, #caf0f8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .subhead {
-            text-align: center;
-            color: rgba(255,255,255,0.7);
+        .campus-label .badge-sub {
             font-size: 0.95rem;
-            margin-bottom: 2.2rem;
-            border-bottom: 1px dashed rgba(255,255,255,0.2);
-            padding-bottom: 1rem;
-        }
-
-        /* input fields — modern floating style */
-        .input-field {
-            position: relative;
-            margin-bottom: 1.5rem;
-        }
-
-        .input-field i {
-            position: absolute;
-            left: 18px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(255,255,255,0.7);
-            font-size: 1.2rem;
-            transition: 0.2s;
-            z-index: 2;
-        }
-
-        .input-field input {
-            width: 100%;
-            padding: 1rem 1rem 1rem 3.2rem;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1.5px solid rgba(255,255,255,0.25);
-            border-radius: 50px;
-            font-size: 1rem;
-            color: white;
-            outline: none;
-            transition: 0.25s;
-            backdrop-filter: blur(4px);
             font-weight: 400;
-            letter-spacing: 0.3px;
+            margin-top: 2px;
+            color: rgba(255,255,255,0.85);
         }
 
-        .input-field input:focus {
-            border-color: #1abc9c;
-            background: rgba(255, 255, 255, 0.15);
-            box-shadow: 0 0 20px -8px #1abc9c;
+        /* ── RIGHT: sign-in panel ── */
+        .right-panel {
+            width: 420px;
+            min-width: 380px;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            padding: 0;
+            box-shadow: -4px 0 24px rgba(0,0,0,0.09);
+            position: relative;
         }
 
-        .input-field input:focus + i {
-            color: #1abc9c;
+        /* top section with logo + college name */
+        .right-header {
+            padding: 2.2rem 2.2rem 1.5rem;
+            border-bottom: 1px solid #e8eaf0;
         }
 
-        .input-field input::placeholder {
-            color: rgba(255,255,255,0.5);
+        .logo-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 0.6rem;
+        }
+
+        /* 
+            REPLACE the src below with your actual logo path:
+            <img src="your-logo.png" …>
+        */
+        .logo-row img {
+            height: 56px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        /* divider line between logo icon and text — matches screenshot */
+        .logo-divider {
+            width: 1px;
+            height: 48px;
+            background: #c5cad6;
+        }
+
+        .college-name-block .cn-main {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #0f2d54;
+            line-height: 1.25;
+        }
+
+        .college-name-block .cn-sub {
+            font-size: 0.75rem;
+            color: #555;
+            margin-top: 2px;
+        }
+
+        .college-address {
+            font-size: 0.78rem;
+            color: #666;
+            margin-top: 0.3rem;
+        }
+
+        /* form area */
+        .form-area {
+            flex: 1;
+            padding: 1.8rem 2.2rem 2rem;
+        }
+
+        .form-area h2 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #0f2d54;
+            margin-bottom: 1.4rem;
+        }
+
+        /* input groups */
+        .field-group {
+            margin-bottom: 1.1rem;
+        }
+
+        .field-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #444;
+            margin-bottom: 4px;
+        }
+
+        .input-wrap {
+            position: relative;
+        }
+
+        .input-wrap input {
+            width: 100%;
+            padding: 0.65rem 2.8rem 0.65rem 0.9rem;
+            border: 1px solid #c8cbd6;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            color: #222;
+            background: #fff;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .input-wrap input:focus {
+            border-color: #1a5bbf;
+            box-shadow: 0 0 0 3px rgba(26, 91, 191, 0.1);
+        }
+
+        .input-wrap input::placeholder {
+            color: #aaa;
             font-weight: 300;
         }
 
-        /* login button */
-        .login-btn {
-            width: 100%;
-            padding: 1rem;
-            background: linear-gradient(105deg, #1abc9c, #16a085);
-            border: none;
-            border-radius: 50px;
+        .input-wrap .input-icon {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #aaa;
+            font-size: 1rem;
+            pointer-events: none;
+        }
+
+        /* password toggle */
+        .input-wrap .toggle-pwd {
+            pointer-events: all;
+            cursor: pointer;
+        }
+
+        /* captcha row */
+        .captcha-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 1.1rem;
+        }
+
+        .captcha-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f0f4ff;
+            border: 1px solid #c8cbd6;
+            border-radius: 6px;
+            padding: 0.55rem 1rem;
+            flex: 1;
+        }
+
+        .captcha-box .captcha-refresh {
+            color: #1a5bbf;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .captcha-box .captcha-text {
+            font-size: 1.1rem;
             font-weight: 700;
-            font-size: 1.2rem;
-            color: white;
+            letter-spacing: 4px;
+            color: #222;
+            font-family: 'Courier New', monospace;
+            user-select: none;
+        }
+
+        .captcha-input {
+            flex: 1;
+        }
+
+        .captcha-input input {
+            width: 100%;
+            padding: 0.65rem 0.9rem;
+            border: 1px solid #c8cbd6;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            color: #222;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .captcha-input input:focus {
+            border-color: #1a5bbf;
+            box-shadow: 0 0 0 3px rgba(26,91,191,0.1);
+        }
+
+        /* remember me */
+        .remember-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 1.2rem;
+        }
+
+        .remember-row input[type="checkbox"] {
+            width: 15px;
+            height: 15px;
+            accent-color: #1a5bbf;
+            cursor: pointer;
+        }
+
+        .remember-row label {
+            font-size: 0.85rem;
+            color: #444;
+            cursor: pointer;
+        }
+
+        /* sign in button */
+        .signin-btn {
+            width: 100%;
+            padding: 0.75rem;
+            background: #0f2d54;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.8rem;
+        }
+
+        .signin-btn:hover {
+            background: #1a4a82;
+            transform: translateY(-1px);
+        }
+
+        .signin-btn:active {
+            transform: translateY(0);
+        }
+
+        /* google button */
+        .google-btn {
+            width: 100%;
+            padding: 0.72rem;
+            background: #fff;
+            color: #333;
+            font-size: 0.95rem;
+            font-weight: 500;
+            border: 1.5px solid #c8cbd6;
+            border-radius: 6px;
+            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.8rem;
-            cursor: pointer;
-            box-shadow: 0 18px 30px -12px #0f3f44;
-            transition: all 0.25s;
-            border: 1px solid rgba(255,255,255,0.2);
-            margin-top: 0.5rem;
+            gap: 8px;
+            transition: background 0.2s, border-color 0.2s;
+            margin-bottom: 0.9rem;
         }
 
-        .login-btn i {
-            font-size: 1rem;
-            transition: transform 0.2s;
+        .google-btn:hover {
+            background: #f5f7ff;
+            border-color: #1a5bbf;
         }
 
-        .login-btn:hover {
-            background: linear-gradient(105deg, #16a085, #1abc9c);
-            transform: translateY(-3px);
-            box-shadow: 0 26px 35px -12px #0f3f44;
+        .google-btn .g-logo {
+            width: 18px;
+            height: 18px;
         }
 
-        .login-btn:hover i {
-            transform: translateX(5px);
+        /* forgot link */
+        .forgot-link {
+            text-align: center;
+            font-size: 0.85rem;
         }
 
-        /* error message elegant */
-        .error-message {
-            background: rgba(225, 85, 85, 0.2);
-            backdrop-filter: blur(6px);
-            border-left: 6px solid #ff6b6b;
-            border-radius: 60px;
-            padding: 0.9rem 1.5rem;
-            margin-top: 1.8rem;
-            color: #ffe3e3;
+        .forgot-link a {
+            color: #1a5bbf;
+            text-decoration: none;
+        }
+
+        .forgot-link a:hover {
+            text-decoration: underline;
+        }
+
+        /* error / success messages */
+        .alert-box {
+            padding: 0.7rem 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
             font-weight: 500;
             display: flex;
             align-items: center;
-            gap: 0.8rem;
-            font-size: 0.9rem;
-            border: 1px solid rgba(255,110,110,0.3);
+            gap: 8px;
+            margin-bottom: 1rem;
         }
 
-        .error-message i {
-            font-size: 1.3rem;
-            color: #ff8a8a;
+        .alert-error {
+            background: #fff0f0;
+            border: 1px solid #f5c6c6;
+            color: #c0392b;
         }
 
-        /* footer help link */
-        .help-link {
-            text-align: center;
-            margin-top: 1.5rem;
-            font-size: 0.85rem;
-            color: rgba(255,255,255,0.5);
+        /* bottom compat bar */
+        .compat-bar {
+            padding: 0.8rem 2.2rem;
+            border-top: 1px solid #e8eaf0;
+            font-size: 0.73rem;
+            color: #888;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
         }
 
-        .help-link a {
-            color: #b3e9db;
-            text-decoration: none;
-            font-weight: 600;
-            border-bottom: 1px dotted;
+        .compat-bar .browser-icon {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
         }
 
-        /* animations */
-        @keyframes fadeInLeft {
-            0% { opacity: 0; transform: translateX(-40px); }
-            100% { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes fadeInRight {
-            0% { opacity: 0; transform: translateX(40px); }
-            100% { opacity: 1; transform: translateX(0); }
-        }
-
-        /* responsiveness */
-        @media (max-width: 1000px) {
-            body { justify-content: center; }
-            .hero-section { display: none; }
-            .login-card { margin-right: 0; width: 90%; max-width: 440px; }
+        /* responsive */
+        @media (max-width: 760px) {
+            .left-panel { display: none; }
+            .right-panel {
+                width: 100%;
+                min-width: unset;
+                box-shadow: none;
+            }
         }
     </style>
 </head>
 <body>
 
-<!-- Left side content (richer) -->
-<div class="hero-section">
-    <div class="college-badge">
-        <span><i class="fas fa-university" style="margin-right: 6px;"></i> Est. 1999</span>
-        <span><i class="fas fa-star"></i> A Grade</span>
-    </div>
-    <h1>MIT Academy<br>of Engineering, Alandi</h1>
-    <p><i class="fas fa-quote-left" style="opacity:0.7; font-size:1rem;"></i> 
-        Unified Intelligence for
-Education and Management
-    </p>
-    <div class="hero-features">
-        <div><i class="fas fa-graduation-cap"></i> 6k+ students</div>
-        <div><i class="fas fa-chalkboard-teacher"></i> 450+ faculty</div>
+<!-- ═══════ LEFT: campus image ═══════ -->
+<div class="left-panel">
+    <div class="bg-img"></div>
+    <div class="campus-label">
+        <div class="badge-title">MIT</div>
+        <div class="badge-sub">Academy of Engineering</div>
     </div>
 </div>
 
-<!-- LOGIN CARD with improved logo area -->
-<div class="login-card">
-    <div class="logo-container">
-        <div class="logo-wrapper">
-            <!-- 🔁 REPLACE WITH YOUR ACTUAL LOGO — preserves exact space -->
-            <img src="https://i.postimg.cc/JzSRThSK/Gemini-Generated-Image-g65nobg65nobg65n.png" 
-                 alt="MIT Academy logo"
-                 onerror="this.src='https://via.placeholder.com/160x70?text=MIT+Logo'">
+<!-- ═══════ RIGHT: sign-in panel ═══════ -->
+<div class="right-panel">
+
+    <!-- Header: logo + college info -->
+    <div class="right-header">
+        <div class="logo-row">
+            <!--
+                REPLACE src with your logo path, e.g.:
+                <img src="logo.png" alt="MIT AoE Logo">
+            -->
+            <img src="https://i.postimg.cc/JzSRThSK/Gemini-Generated-Image-g65nobg65nobg65n.png"
+                 alt="MIT Academy Logo"
+                 onerror="this.style.display='none'">
+            <div class="logo-divider"></div>
+            <div class="college-name-block">
+                <div class="cn-main">Academy of<br>Engineering</div>
+                <div class="cn-sub">(An Autonomous Institute Affiliated to Savitribai Phule Pune University)</div>
+            </div>
+        </div>
+        <div class="college-address">
+            <i class="fas fa-map-marker-alt" style="color:#1a5bbf;font-size:0.75rem;margin-right:4px;"></i>
+            Alandi Road, Pune – 412 105, Maharashtra (India)
         </div>
     </div>
-    <h2>Welcome back</h2>
-    <div class="subhead">Secure login</div>
 
-    <!-- Email input with icon -->
-    <div class="input-field">
-        <i class="far fa-envelope"></i>
-        <input type="email" id="email" placeholder="Official email" autocomplete="off">
+    <!-- Form -->
+    <div class="form-area">
+        <h2>Sign In</h2>
+
+        <!-- Error box (hidden by default) -->
+        <div id="error" class="alert-box alert-error" style="display:none;">
+            <i class="fas fa-exclamation-circle"></i>
+            <span id="error-text"></span>
+        </div>
+
+        <!-- Email -->
+        <div class="field-group">
+            <label for="email">User Name</label>
+            <div class="input-wrap">
+                <input type="email" id="email" placeholder="Official email" autocomplete="off">
+                <i class="fas fa-user input-icon"></i>
+            </div>
+        </div>
+
+        <!-- Password -->
+        <div class="field-group">
+            <label for="password">Password</label>
+            <div class="input-wrap">
+                <input type="password" id="password" placeholder="Password">
+                <i class="fas fa-eye-slash input-icon toggle-pwd" id="pwdToggleIcon" onclick="togglePassword()"></i>
+            </div>
+        </div>
+
+        <!-- Captcha -->
+        <div class="captcha-row">
+            <div class="captcha-box">
+                <span class="captcha-refresh" onclick="refreshCaptcha()" title="Refresh captcha">
+                    <i class="fas fa-sync-alt"></i>
+                </span>
+                <span class="captcha-text" id="captchaDisplay">--</span>
+            </div>
+            <div class="captcha-input">
+                <input type="text" id="captchaInput" placeholder="Captcha" maxlength="6" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- Remember me -->
+        <div class="remember-row">
+            <input type="checkbox" id="rememberMe">
+            <label for="rememberMe">Remember Me</label>
+        </div>
+
+        <!-- Sign In button -->
+        <button class="signin-btn" onclick="login()">Sign In</button>
+
+        <!-- Continue with Google -->
+        <button class="google-btn" onclick="loginWithGoogle()">
+            <svg class="g-logo" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <path fill="#EA4335" d="M24 9.5c3.2 0 5.8 1.1 7.9 2.9l5.9-5.9C34.2 3.4 29.4 1.5 24 1.5 14.8 1.5 7 7.2 3.5 15.1l6.9 5.4C12.3 14.4 17.7 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.4 5.8c4.3-4 6.8-9.9 6.8-17z"/>
+                <path fill="#FBBC05" d="M10.4 28.5A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.1.8-4.5L3.5 14c-1.3 2.6-2 5.5-2 8.5s.7 6 2 8.5l6.9-5.4-.1-.6z"/>
+                <path fill="#34A853" d="M24 46.5c5.4 0 10-1.8 13.3-4.9l-7.4-5.8c-1.9 1.3-4.2 2.1-6.9 2.1-6.3 0-11.7-4.3-13.6-10l-6.9 5.4C7 40.6 14.8 46.5 24 46.5z"/>
+            </svg>
+            Continue With Google
+        </button>
+
+        <!-- Forgot -->
+        <div class="forgot-link">
+            <a href="#">Forgot Password / UserName</a>
+        </div>
     </div>
 
-    <!-- Password input with icon -->
-    <div class="input-field">
-        <i class="fas fa-lock"></i>
-        <input type="password" id="password" placeholder="Password">
+    <!-- Browser compat bar -->
+    <div class="compat-bar">
+        <span>Site Compatible –</span>
+        <span class="browser-icon">
+            <i class="fab fa-chrome" style="color:#4285F4;"></i> Google Chrome 70+
+        </span>
+        <span>|</span>
+        <span class="browser-icon">
+            <i class="fab fa-firefox" style="color:#FF7139;"></i> Firefox 65+
+        </span>
+        <span>|</span>
+        <span class="browser-icon">
+            <i class="fab fa-edge" style="color:#0078D4;"></i> Microsoft Edge 89+
+        </span>
     </div>
 
-    <!-- Login button (exactly same onclick) -->
-    <button class="login-btn" onclick="login()">
-        <span>Access dashboard</span>
-        <i class="fas fa-arrow-right"></i>
-    </button>
-
-    <!-- error container: we keep ID "error" but wrap in nice style. -->
-    <div id="error" class="error-message" style="display: none;">
-        <i class="fas fa-exclamation-circle"></i>
-        <span id="error-text"></span>
-    </div>
-
-    <div class="help-link">
-        <a href="#"><i class="far fa-question-circle"></i> Need help?</a> &nbsp;|&nbsp; 
-        <span style="color:rgba(255,255,255,0.3);">🔒 SSL secured</span>
-    </div>
 </div>
 
-<!-- ============ CORRECTED FIREBASE LOGIC ============ -->
+<!-- ═══════ FIREBASE + LOGIC ═══════ -->
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getAuth, signInWithEmailAndPassword } 
-    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { getFirestore, doc, getDoc } 
-    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { initializeApp }            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup }
+                                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyClbcYYVjl6mnEdxMUyC-YC4jDztOlOGZA",
@@ -389,59 +536,98 @@ Education and Management
         appId: "1:144412069580:web:52670196ee40c687ddbc69"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
+    const app      = initializeApp(firebaseConfig);
+    const auth     = getAuth(app);
+    const db       = getFirestore(app);
+    const provider = new GoogleAuthProvider();
 
-    window.login = async function() {
-        const email = document.getElementById("email").value;
-        const password = document.getElementById("password").value;
-        const errorDiv = document.getElementById("error");
-        const errorTextSpan = document.getElementById("error-text");
+    /* ── captcha ── */
+    let currentCaptcha = '';
+    function generateCaptcha() {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        currentCaptcha = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+        document.getElementById('captchaDisplay').textContent = currentCaptcha;
+    }
+    window.refreshCaptcha = generateCaptcha;
+    generateCaptcha();
 
-        // Hide error initially
-        errorDiv.style.display = 'none';
-
-        try {
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            const user = userCredential.user;
-
-            // 🔥 Fetch role from Firestore
-            const snap = await getDoc(doc(db, "users", user.uid));
-
-            if (!snap.exists()) {
-                errorTextSpan.innerText = "Role not assigned! Contact administrator.";
-                errorDiv.style.display = 'flex';
-                return;
-            }
-
-            const role = snap.data().role;
-
-            // 🔥 Redirect Based on Role
-            if (role === "admin") {
-                window.location.href = "admin.html";
-            } else if (role === "student") {
-                window.location.href = "student.html";
-            } else if (role === "faculty") {
-                window.location.href = "faculty.html";
-            } else if (role === "parent") {
-                window.location.href = "parent.html";
-            } else {
-                errorTextSpan.innerText = "Invalid role assigned.";
-                errorDiv.style.display = 'flex';
-            }
-
-        } catch (error) {
-            // Display Firebase error message in styled container
-            errorTextSpan.innerText = error.message;
-            errorDiv.style.display = 'flex';
+    /* ── password toggle ── */
+    window.togglePassword = function () {
+        const pwdField = document.getElementById('password');
+        const icon     = document.getElementById('pwdToggleIcon');
+        if (pwdField.type === 'password') {
+            pwdField.type = 'text';
+            icon.classList.replace('fa-eye-slash', 'fa-eye');
+        } else {
+            pwdField.type = 'password';
+            icon.classList.replace('fa-eye', 'fa-eye-slash');
         }
     };
 
-    // ensure error is hidden on load
-    window.addEventListener('DOMContentLoaded', () => {
+    /* ── shared: redirect by role ── */
+    async function redirectByRole(uid) {
+        const snap = await getDoc(doc(db, 'users', uid));
+        const errorDiv  = document.getElementById('error');
+        const errorText = document.getElementById('error-text');
+
+        if (!snap.exists()) {
+            errorText.innerText = 'Role not assigned! Contact administrator.';
+            errorDiv.style.display = 'flex';
+            return;
+        }
+
+        const role = snap.data().role;
+        const routes = { admin: 'admin.html', student: 'student.html', faculty: 'faculty.html', parent: 'parent.html' };
+        if (routes[role]) {
+            window.location.href = routes[role];
+        } else {
+            errorText.innerText = 'Invalid role assigned.';
+            errorDiv.style.display = 'flex';
+        }
+    }
+
+    /* ── show error helper ── */
+    function showError(msg) {
+        const errorDiv  = document.getElementById('error');
+        const errorText = document.getElementById('error-text');
+        errorText.innerText = msg;
+        errorDiv.style.display = 'flex';
+    }
+
+    /* ── email/password login ── */
+    window.login = async function () {
+        const email    = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const captcha  = document.getElementById('captchaInput').value.trim().toUpperCase();
+        const errorDiv = document.getElementById('error');
+        errorDiv.style.display = 'none';
+
+        if (!email || !password) { showError('Please enter your email and password.'); return; }
+        if (captcha !== currentCaptcha) { showError('Captcha does not match. Please try again.'); generateCaptcha(); document.getElementById('captchaInput').value = ''; return; }
+
+        try {
+            const cred = await signInWithEmailAndPassword(auth, email, password);
+            await redirectByRole(cred.user.uid);
+        } catch (err) {
+            showError(err.message);
+            generateCaptcha();
+            document.getElementById('captchaInput').value = '';
+        }
+    };
+
+    /* ── Google login ── */
+    window.loginWithGoogle = async function () {
         document.getElementById('error').style.display = 'none';
-    });
+        try {
+            const result = await signInWithPopup(auth, provider);
+            await redirectByRole(result.user.uid);
+        } catch (err) {
+            showError(err.message);
+        }
+    };
+
+    /* hide error on load */
+    document.getElementById('error').style.display = 'none';
 </script>
 
 </body>
